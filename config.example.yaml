@@ -11,8 +11,6 @@ paths:
   transcripts: "data/transcripts"
   # Directory where summaries will be stored
   summaries: "data/summaries"
-  # Directory where Whisper models will be stored
-  models: "data/models"
   # Path to the state file (stores last processed timestamp)
   state_file: "data/state.json"
   # Path to the prompt template file
@@ -31,15 +29,10 @@ llm:
     model: "llama3"
 
 whisper:
-  # Root directory of the whisper.cpp installation
-  # DO NOT CHANGE if running with Docker (it is installed at /app/whisper.cpp)
-  root: "/app/whisper.cpp"
+  # Base URL of your OpenAI-compatible Whisper server
+  base_url: "http://localhost:8000"
   # Whisper model to use (e.g. "base", "small", "medium", "large-v3")
   model: "medium"
-  # Explicit path to the model file.
-  # If left empty, it is derived as: {paths.models}/ggml-{model}.bin
-  model_path: null
-  # Path to the whisper-cli executable. 
-  # If left empty, it defaults to {root}/build/bin/whisper-cli
-  # DO NOT CHANGE if running with Docker
-  bin_path: null
+  # HTTP timeout in seconds for transcription requests
+  timeout: 600
+  # Optional auth token should be provided via .env as WHISPER_API_KEY

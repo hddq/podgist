@@ -6,20 +6,8 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    git \
-    make \
-    cmake \
-    g++ \
     ffmpeg \
-    curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Clone and build whisper.cpp
-# We clone into /app/whisper.cpp
-RUN git clone https://github.com/ggerganov/whisper.cpp.git /app/whisper.cpp && \
-    cd /app/whisper.cpp && \
-    cmake -B build && \
-    cmake --build build --config Release
 
 # Copy the requirements file into the container
 COPY requirements.txt .
@@ -31,8 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Create directories for data persistence
-# models: to store ggml models
-RUN mkdir -p data/downloads data/transcripts data/models data/summaries
+RUN mkdir -p data/downloads data/transcripts data/summaries
 
 # Run the application
 CMD ["python", "main.py"]

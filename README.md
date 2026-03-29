@@ -1,12 +1,12 @@
 # PodGist 🎧📝
 
-PodGist is an automated tool that "listens" to your podcast habits and creates concise summaries for you. It monitors your [gPodder](https://gpodder.net) account (or a self-hosted instance) for played episodes, automatically downloads the audio, transcribes it locally using [Whisper.cpp](https://github.com/ggerganov/whisper.cpp), and generates a structured summary using **Google Gemini** or **Ollama**.
+PodGist is an automated tool that "listens" to your podcast habits and creates concise summaries for you. It monitors your [gPodder](https://gpodder.net) account (or a self-hosted instance) for played episodes, automatically downloads the audio, transcribes it using a Whisper server, and generates a structured summary using **Google Gemini** or **Ollama**.
 
 ## ✨ Features
 
 - **🔄 Automated Sync**: Polls gPodder.net (or your self-hosted instance) for new "play" actions (episodes you've listened to).
 - **📥 Smart Downloading**: Automatically downloads the audio files for processed episodes.
-- **🔒 Privacy-First Transcription**: Uses `whisper.cpp` to transcribe audio locally on your machine (no audio sent to the cloud for transcription).
+- **🔒 Flexible Transcription**: Sends audio to your configured Whisper server (self-hosted or remote).
 - **🤖 AI Summarization**: Generates summaries using Google Gemini (Cloud) or Ollama (Local).
 - **🐳 Docker Ready**: Easy to deploy with Docker Compose.
 - **⚙️ Highly Configurable**: Customize models, prompts, and paths easily.
@@ -25,11 +25,13 @@ Get up and running without installing Python or building code.
 
 2.  **Configure**:
     -   Edit `config.yaml` to set your preferences (paths, models, etc.).
+    -   Set `whisper.base_url` to your Whisper server URL.
     -   Create a `.env` file in the same directory with your credentials:
         ```ini
         GPODDER_USERNAME=your_username
         GPODDER_PASSWORD=your_password
         GEMINI_API_KEY=your_gemini_key  # Optional: Only if using Gemini
+        WHISPER_API_KEY=your_whisper_key  # Optional: Only if your Whisper server requires auth
         ```
 
 3.  **Run**:
@@ -43,7 +45,7 @@ Get up and running without installing Python or building code.
 1.  **Prerequisites**:
     -   Python 3.13
     -   ffmpeg
-    -   [Whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+    -   Access to an OpenAI-compatible Whisper server
 
 2.  **Clone & Install**:
     ```bash
@@ -57,7 +59,7 @@ Get up and running without installing Python or building code.
 3.  **Configure**:
     -   Copy `.env.example` to `.env` and fill in credentials.
     -   Copy `config.example.yaml` to `config.yaml`.
-    -   **Important**: Edit `config.yaml` and set `whisper.root` to the path where you built `whisper.cpp`.
+    -   **Important**: Edit `config.yaml` and set `whisper.base_url` to your Whisper server endpoint.
 
 4.  **Run**:
     ```bash

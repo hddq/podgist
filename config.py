@@ -58,6 +58,7 @@ def get_config(key_path, default=None):
 GPODDER_USERNAME = os.getenv("GPODDER_USERNAME")
 GPODDER_PASSWORD = os.getenv("GPODDER_PASSWORD")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+WHISPER_API_KEY = os.getenv("WHISPER_API_KEY")
 
 AUTH = (GPODDER_USERNAME, GPODDER_PASSWORD)
 
@@ -71,7 +72,6 @@ SINCE_TIMESTAMP = int(get_config("gpodder.since_timestamp", 0))
 DOWNLOAD_DIR = get_config("paths.downloads", "data/downloads")
 TRANSCRIPT_DIR = get_config("paths.transcripts", "data/transcripts")
 SUMMARY_DIR = get_config("paths.summaries", "data/summaries")
-MODELS_DIR = get_config("paths.models", "data/models")
 STATE_FILE = get_config("paths.state_file", "data/state.json")
 PROMPT_FILE = get_config("paths.prompt_file", "prompt.md")
 
@@ -81,16 +81,7 @@ GEMINI_MODEL = get_config("llm.gemini.model", "gemini-3-flash-preview")
 OLLAMA_BASE_URL = get_config("llm.ollama.base_url", "http://localhost:11434")
 OLLAMA_MODEL = get_config("llm.ollama.model", "llama3")
 
-# Whisper Configuration
-WHISPER_ROOT = get_config("whisper.root", "/app/whisper.cpp")
+# Whisper Server Configuration
+WHISPER_BASE_URL = get_config("whisper.base_url", "http://localhost:8000").rstrip("/")
 WHISPER_MODEL = get_config("whisper.model", "base")
-
-# Derived Whisper Paths
-WHISPER_MODEL_PATH = os.path.join(MODELS_DIR, f"ggml-{WHISPER_MODEL}.bin")
-
-_whisper_bin_conf = get_config("whisper.bin_path")
-if _whisper_bin_conf:
-    WHISPER_BIN = _whisper_bin_conf
-else:
-    # Default to standard build path inside WHISPER_ROOT
-    WHISPER_BIN = os.path.join(WHISPER_ROOT, "build/bin/whisper-cli")
+WHISPER_TIMEOUT = int(get_config("whisper.timeout", 600))
