@@ -53,7 +53,7 @@ Get up and running without installing Python or building code.
     cd podgist
     python3 -m venv venv
     source venv/bin/activate
-    pip3 install -r requirements.txt
+    pip3 install -e .
     ```
 
 3.  **Configure**:

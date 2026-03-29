@@ -30,12 +30,12 @@
               
               source venv/bin/activate
               
-              if [ -f "requirements.txt" ]; then
+              if [ -f "pyproject.toml" ]; then
                 echo "Syncing Python dependencies..."
                 pip install --quiet --upgrade pip
-                pip install --quiet -r requirements.txt
+                pip install --quiet --editable .
               else
-                echo "⚠️ requirements.txt not found!"
+                echo "⚠️ pyproject.toml not found!"
               fi
 
               

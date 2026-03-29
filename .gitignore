@@ -5,3 +5,4 @@ __pycache__/
 config.yaml
 config.local.yaml
 .direnv
+*.egg-info/

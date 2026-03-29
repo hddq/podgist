@@ -1,16 +1,27 @@
 import time
 import sys
 from datetime import datetime
+from importlib.metadata import PackageNotFoundError, version as package_version
 from gpodder import fetch_episode_actions
 from utils import parse_timestamp, get_podcast_metadata, sanitize_filename
 from downloader import download_file
 from transcriber import transcribe
 from summarizer import summarize
 from state_manager import load_last_timestamp, save_last_timestamp
-from version import __version__
 import os
+import tomllib
 
 POLL_INTERVAL = 600  # 10 minutes
+
+
+def get_app_version():
+    try:
+        return package_version("podgist")
+    except PackageNotFoundError:
+        pyproject_path = os.path.join(os.path.dirname(__file__), "pyproject.toml")
+        with open(pyproject_path, "rb") as f:
+            data = tomllib.load(f)
+        return data["project"]["version"]
 
 def process_actions(since_ts):
     """
@@ -88,7 +99,7 @@ def process_actions(since_ts):
     return max_ts
 
 def main():
-    print(f"🚀 Starting PodGist v{__version__} Loop...")
+    print(f"🚀 Starting PodGist v{get_app_version()} Loop...")
     current_since = load_last_timestamp()
     print(f"📅 Starting check from timestamp: {current_since}")
 

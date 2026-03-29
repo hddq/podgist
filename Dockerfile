@@ -9,14 +9,11 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the requirements file into the container
-COPY requirements.txt .
-
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code
+# Copy the application code
 COPY . .
+
+# Install project dependencies from pyproject.toml
+RUN pip install --no-cache-dir .
 
 # Create directories for data persistence
 RUN mkdir -p data/downloads data/transcripts data/summaries
