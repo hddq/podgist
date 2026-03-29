@@ -54,6 +54,23 @@ def get_config(key_path, default=None):
 
     return default
 
+def get_config_bool(key_path, default=False):
+    """
+    Retrieves a boolean config value with tolerant parsing.
+    """
+    value = get_config(key_path, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return bool(default)
+
 # --- Secrets (From Environment Only) ---
 GPODDER_USERNAME = os.getenv("GPODDER_USERNAME")
 GPODDER_PASSWORD = os.getenv("GPODDER_PASSWORD")
@@ -80,6 +97,7 @@ LLM_PROVIDER = get_config("llm.provider", "gemini").lower()
 GEMINI_MODEL = get_config("llm.gemini.model", "gemini-3-flash-preview")
 OLLAMA_BASE_URL = get_config("llm.ollama.base_url", "http://localhost:11434")
 OLLAMA_MODEL = get_config("llm.ollama.model", "llama3")
+OLLAMA_AUTO_PULL = get_config_bool("llm.ollama.auto_pull", True)
 
 # Whisper Server Configuration
 WHISPER_BASE_URL = get_config("whisper.base_url", "http://localhost:8000").rstrip("/")

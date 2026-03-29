@@ -27,6 +27,8 @@ llm:
   ollama:
     base_url: "http://localhost:11434"
     model: "llama3"
+    # Automatically pull the model when Ollama reports it as missing
+    auto_pull: true
 
 whisper:
   # Base URL of your OpenAI-compatible Whisper server

@@ -10,7 +10,8 @@ from config import (
     LLM_PROVIDER,
     GEMINI_MODEL,
     OLLAMA_BASE_URL,
-    OLLAMA_MODEL
+    OLLAMA_MODEL,
+    OLLAMA_AUTO_PULL
 )
 
 def summarize_with_gemini(prompt):
@@ -36,15 +37,39 @@ def summarize_with_ollama(prompt):
     """
     Summarizes the prompt using Ollama.
     """
-    url = f"{OLLAMA_BASE_URL.rstrip('/')}/api/generate"
+    base_url = OLLAMA_BASE_URL.rstrip("/")
+    url = f"{base_url}/api/generate"
     payload = {
         "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False
     }
-    
+
+    def pull_model_if_missing():
+        pull_url = f"{base_url}/api/pull"
+        pull_payload = {
+            "name": OLLAMA_MODEL,
+            "stream": False
+        }
+        print(f"Ollama model '{OLLAMA_MODEL}' is missing. Pulling it now...")
+        pull_response = requests.post(pull_url, json=pull_payload, timeout=1800)
+        pull_response.raise_for_status()
+        print(f"Successfully pulled Ollama model '{OLLAMA_MODEL}'.")
+
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=300)
+        if response.status_code == 404 and OLLAMA_AUTO_PULL:
+            error_text = ""
+            try:
+                error_text = response.json().get("error", "")
+            except Exception:
+                pass
+            if "not found" in error_text.lower():
+                pull_model_if_missing()
+                retry_response = requests.post(url, json=payload, timeout=300)
+                retry_response.raise_for_status()
+                retry_data = retry_response.json()
+                return retry_data.get("response")
         response.raise_for_status()
         data = response.json()
         return data.get("response")
