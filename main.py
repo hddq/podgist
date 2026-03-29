@@ -47,6 +47,7 @@ def process_actions(since_ts):
     print(f"\n🎧 New played episodes: {len(plays)}\n")
 
     max_ts = since_ts
+    checkpoint_blocked = False
 
     for a in plays:
         raw_ts = a.get("timestamp")
@@ -61,11 +62,8 @@ def process_actions(since_ts):
         print(f"🎙 Episode: {episode_url}")
         print(f"▶️  Position: {a.get('position')} / {a.get('total')}")
 
-        # Update max_ts if this action is newer
-        if dt:
-             ts_val = int(dt.timestamp())
-             if ts_val > max_ts:
-                 max_ts = ts_val
+        ts_val = int(dt.timestamp()) if dt else None
+        action_succeeded = False
 
         if episode_url:
              # Fetch metadata to determine structure
@@ -92,9 +90,21 @@ def process_actions(since_ts):
              if filepath:
                  transcript_path = transcribe(filepath)
                  if transcript_path:
-                     summarize(transcript_path)
+                     summary_path = summarize(transcript_path)
+                     if summary_path:
+                         action_succeeded = True
         else:
              print("⚠️ No episode URL found, skipping download.")
+             # Non-retryable malformed action; allow checkpoint to move past it.
+             action_succeeded = True
+
+        if not action_succeeded and not checkpoint_blocked:
+             checkpoint_blocked = True
+             print("⚠️ Processing failed; keeping checkpoint before this action for retry.")
+
+        # Never move checkpoint past the first failed action in this batch.
+        if not checkpoint_blocked and ts_val is not None and ts_val > max_ts:
+             max_ts = ts_val
         
     return max_ts
 

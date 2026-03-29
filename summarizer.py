@@ -86,7 +86,7 @@ def summarize(transcript_path):
     """
     if not transcript_path or not os.path.exists(transcript_path):
         print(f"Transcript not found: {transcript_path}")
-        return
+        return None
 
     # Determine relative path to maintain structure
     try:
@@ -108,7 +108,7 @@ def summarize(transcript_path):
 
     if os.path.exists(output_path):
         print(f"Summary already exists: {output_path}")
-        return
+        return output_path
 
     # Ensure output dir
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -119,19 +119,19 @@ def summarize(transcript_path):
             transcript_text = f.read()
     except Exception as e:
         print(f"Error reading transcript: {e}")
-        return
+        return None
 
     # Read prompt
     if not os.path.exists(PROMPT_FILE):
         print(f"Prompt file not found: {PROMPT_FILE}")
-        return
+        return None
 
     try:
         with open(PROMPT_FILE, "r", encoding="utf-8") as f:
             prompt_template = f.read()
     except Exception as e:
         print(f"Error reading prompt file: {e}")
-        return
+        return None
 
     # Construct prompt
     prompt = prompt_template.replace("{transcript}", transcript_text)
@@ -145,14 +145,17 @@ def summarize(transcript_path):
         summary_text = summarize_with_ollama(prompt)
     else:
         print(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
-        return
+        return None
 
     if summary_text:
         try:
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(summary_text)
             print(f"Summary saved to {output_path}")
+            return output_path
         except Exception as e:
             print(f"Error saving summary: {e}")
+            return None
     else:
         print("Failed to generate summary.")
+        return None
