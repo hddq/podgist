@@ -8,7 +8,7 @@ from downloader import download_file
 from transcriber import transcribe
 from summarizer import summarize
 from state_manager import load_last_timestamp, save_last_timestamp
-from config import PIPELINE_BATCH_SIZE
+from config import PIPELINE_BATCH_SIZE, TRANSCRIPT_DIR, SUMMARY_DIR
 import os
 import tomllib
 
@@ -65,8 +65,14 @@ def build_work_item(action):
         "podcast_url": podcast_url,
         "relative_path": relative_path,
         "filepath": None,
-        "transcript_path": None,
-        "summary_path": None,
+        "transcript_path": (
+            os.path.join(TRANSCRIPT_DIR, relative_path + ".txt")
+            if relative_path else None
+        ),
+        "summary_path": (
+            os.path.join(SUMMARY_DIR, relative_path + ".md")
+            if relative_path else None
+        ),
         "succeeded": False,
     }
 
@@ -103,6 +109,13 @@ def process_actions(since_ts):
 
     actions = data.get("actions", [])
     plays = [a for a in actions if a.get("action") == "play"]
+    plays = [
+        a for a in plays
+        if (
+            (parsed_ts := parse_timestamp(a.get("timestamp"))) is None
+            or int(parsed_ts.timestamp()) > since_ts
+        )
+    ]
     
     if not plays:
         print("No new 'play' actions found.")
@@ -126,6 +139,13 @@ def process_actions(since_ts):
                 print("⚠️ No episode URL found, skipping download.")
                 item["succeeded"] = True
                 continue
+            if item["summary_path"] and os.path.exists(item["summary_path"]):
+                print(f"Summary already exists: {item['summary_path']}")
+                item["succeeded"] = True
+                continue
+            if item["transcript_path"] and os.path.exists(item["transcript_path"]):
+                print(f"Transcript already exists: {item['transcript_path']}")
+                continue
 
             item["filepath"] = download_file(
                 item["episode_url"],
@@ -138,6 +158,8 @@ def process_actions(since_ts):
         for item in batch_items:
             if item["succeeded"]:
                 continue
+            if item["transcript_path"] and os.path.exists(item["transcript_path"]):
+                continue
             if not item["filepath"]:
                 batch_failed = True
                 continue
@@ -149,6 +171,9 @@ def process_actions(since_ts):
         print("🧠 Phase 3: Summarize all")
         for item in batch_items:
             if item["succeeded"]:
+                continue
+            if item["summary_path"] and os.path.exists(item["summary_path"]):
+                item["succeeded"] = True
                 continue
             if not item["transcript_path"]:
                 batch_failed = True
