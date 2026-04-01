@@ -14,7 +14,7 @@ paths:
   # Path to the state file (stores last processed timestamp)
   state_file: "data/state.json"
   # Path to the prompt template file
-  prompt_file: "prompt.md"
+  prompt_file: "config/prompt.md"
 
 llm:
   # LLM Provider to use. Options: "gemini", "ollama"

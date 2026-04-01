@@ -2,9 +2,8 @@ services:
   podgist:
     image: ghcr.io/hddq/podgist:latest
     volumes:
-      - ./data:/app/data:z
-      - ./config.yaml:/app/config.yaml:z,ro
-      - ./prompt.md:/app/prompt.md:z,ro
+      - ./data:/app/data
+      - ./config:/app/config
     env_file:
       - .env
     environment:

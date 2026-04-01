@@ -1,30 +1,50 @@
 import os
+import shutil
+from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
 # Load environment variables (secrets only)
 load_dotenv()
 
+CONFIG_DIR = Path("config")
+CONFIG_FILE = CONFIG_DIR / "config.yaml"
+PROMPT_FILE_DEFAULT = CONFIG_DIR / "prompt.md"
+CONFIG_EXAMPLE_FILE = Path("config.example.yaml")
+PROMPT_EXAMPLE_FILE = Path("prompt.example.md")
+
+
+def ensure_runtime_config_files():
+    """
+    Ensures the runtime config directory contains the required files.
+    """
+    CONFIG_DIR.mkdir(exist_ok=True)
+
+    if not CONFIG_FILE.exists() and CONFIG_EXAMPLE_FILE.exists():
+        shutil.copyfile(CONFIG_EXAMPLE_FILE, CONFIG_FILE)
+        print(f"Created {CONFIG_FILE} from {CONFIG_EXAMPLE_FILE}.")
+
+    if not PROMPT_FILE_DEFAULT.exists() and PROMPT_EXAMPLE_FILE.exists():
+        shutil.copyfile(PROMPT_EXAMPLE_FILE, PROMPT_FILE_DEFAULT)
+        print(f"Created {PROMPT_FILE_DEFAULT} from {PROMPT_EXAMPLE_FILE}.")
+
+
 def load_yaml_config():
     """
-    Loads configuration from config.yaml.
-    Looks in current directory and /app/config/ (common for Docker/K8s).
+    Loads configuration from config/config.yaml.
     """
-    candidates = [
-        "config.local.yaml", # Local override (usually ignored by git)
-        "config.yaml",       # Default project config
-        "/app/config/config.yaml" # Docker/K8s volume mount
-    ]
-    
-    for path in candidates:
-        if os.path.exists(path):
-            try:
-                with open(path, 'r') as f:
-                    return yaml.safe_load(f) or {}
-            except Exception as e:
-                print(f"Warning: Failed to load config from {path}: {e}")
-    
-    print("Warning: No config.yaml found. Using defaults only.")
+    ensure_runtime_config_files()
+
+    if not CONFIG_FILE.exists():
+        print("Warning: config/config.yaml not found. Using defaults only.")
+        return {}
+
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"Warning: Failed to load config from {CONFIG_FILE}: {e}")
+
     return {}
 
 _yaml_conf = load_yaml_config()
@@ -90,7 +110,7 @@ DOWNLOAD_DIR = get_config("paths.downloads", "data/downloads")
 TRANSCRIPT_DIR = get_config("paths.transcripts", "data/transcripts")
 SUMMARY_DIR = get_config("paths.summaries", "data/summaries")
 STATE_FILE = get_config("paths.state_file", "data/state.json")
-PROMPT_FILE = get_config("paths.prompt_file", "prompt.md")
+PROMPT_FILE = get_config("paths.prompt_file", str(PROMPT_FILE_DEFAULT))
 
 # LLM Configuration
 LLM_PROVIDER = get_config("llm.provider", "gemini").lower()
