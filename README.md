@@ -47,7 +47,7 @@ Get up and running without installing Python or building code.
 ### Option B: Local Python Setup (For Developers)
 
 1.  **Prerequisites**:
-    -   Python 3.13
+    -   Python 3.14
     -   ffmpeg
     -   Access to an OpenAI-compatible Whisper server
 

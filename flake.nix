@@ -16,7 +16,7 @@
         in {
           default = pkgs.mkShell {
             packages = with pkgs; [
-              python313
+              python314
               ffmpeg
             ];
 
