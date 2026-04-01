@@ -105,6 +105,9 @@ AUTH = (GPODDER_USERNAME, GPODDER_PASSWORD)
 GPODDER_BASE_URL = get_config("gpodder.base_url", "").rstrip("/")
 SINCE_TIMESTAMP = int(get_config("gpodder.since_timestamp", 0))
 
+# Pipeline
+PIPELINE_BATCH_SIZE = int(get_config("pipeline.batch_size", 1))
+
 # Paths
 DOWNLOAD_DIR = get_config("paths.downloads", "data/downloads")
 TRANSCRIPT_DIR = get_config("paths.transcripts", "data/transcripts")

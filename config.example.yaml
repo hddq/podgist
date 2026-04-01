@@ -4,6 +4,10 @@ gpodder:
   # Initial timestamp to start fetching from (if state is empty). 0 = beginning of time.
   since_timestamp: 0
 
+pipeline:
+  # Number of episodes to process per batch. 1 = effectively sequential.
+  batch_size: 5
+
 paths:
   # Directory where downloaded audio files will be stored
   downloads: "data/downloads"

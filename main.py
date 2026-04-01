@@ -8,6 +8,7 @@ from downloader import download_file
 from transcriber import transcribe
 from summarizer import summarize
 from state_manager import load_last_timestamp, save_last_timestamp
+from config import PIPELINE_BATCH_SIZE
 import os
 import tomllib
 
@@ -23,10 +24,76 @@ def get_app_version():
             data = tomllib.load(f)
         return data["project"]["version"]
 
+
+def build_work_item(action):
+    raw_ts = action.get("timestamp")
+    dt = parse_timestamp(raw_ts)
+    time_str = dt.isoformat() if dt else "unknown"
+    episode_url = action.get("episode")
+    podcast_url = action.get("podcast")
+
+    print("─" * 80)
+    print(f"🕒 {time_str}")
+    print(f"📡 Podcast: {podcast_url}")
+    print(f"🎙 Episode: {episode_url}")
+    print(f"▶️  Position: {action.get('position')} / {action.get('total')}")
+
+    relative_path = None
+    if episode_url:
+        podcast_title, episode_title = get_podcast_metadata(podcast_url, episode_url)
+
+        if not podcast_title:
+            podcast_title = "Unknown Podcast"
+        if not episode_title:
+            episode_title = episode_url.split("/")[-1]
+            if "?" in episode_title:
+                episode_title = episode_title.split("?")[0]
+
+        safe_podcast = sanitize_filename(podcast_title)
+        safe_episode = sanitize_filename(episode_title)
+
+        if not safe_episode.lower().endswith(".mp3") and not safe_episode.lower().endswith(".m4a"):
+            safe_episode += ".mp3"
+
+        relative_path = os.path.join(safe_podcast, safe_episode)
+
+    return {
+        "action": action,
+        "timestamp": dt,
+        "timestamp_value": int(dt.timestamp()) if dt else None,
+        "episode_url": episode_url,
+        "podcast_url": podcast_url,
+        "relative_path": relative_path,
+        "filepath": None,
+        "transcript_path": None,
+        "summary_path": None,
+        "succeeded": False,
+    }
+
+
+def chunk_items(items, chunk_size):
+    for index in range(0, len(items), chunk_size):
+        yield items[index:index + chunk_size]
+
+
+def cleanup_batch_audio(batch_items):
+    for item in batch_items:
+        filepath = item.get("filepath")
+        if not filepath:
+            continue
+
+        try:
+            os.remove(filepath)
+            print(f"🧹 Removed audio file: {filepath}")
+        except FileNotFoundError:
+            continue
+        except OSError as e:
+            print(f"Warning: failed to remove audio file {filepath}: {e}")
+
 def process_actions(since_ts):
     """
     Fetches and processes actions since the given timestamp.
-    Returns the updated timestamp (max of current and processed actions).
+    Returns the updated timestamp after processing successful batches.
     """
     try:
         data = fetch_episode_actions(since=since_ts)
@@ -46,67 +113,66 @@ def process_actions(since_ts):
 
     print(f"\n🎧 New played episodes: {len(plays)}\n")
 
-    max_ts = since_ts
-    checkpoint_blocked = False
+    batch_size = PIPELINE_BATCH_SIZE if PIPELINE_BATCH_SIZE > 0 else 1
+    current_since = since_ts
+    for batch_index, batch_actions in enumerate(chunk_items(plays, batch_size), start=1):
+        batch_items = [build_work_item(action) for action in batch_actions]
+        batch_failed = False
+        print(f"\n📦 Processing batch {batch_index} ({len(batch_items)} episode(s))")
 
-    for a in plays:
-        raw_ts = a.get("timestamp")
-        dt = parse_timestamp(raw_ts)
-        time_str = dt.isoformat() if dt else "unknown"
-        episode_url = a.get('episode')
-        podcast_url = a.get('podcast')
+        print("⬇️  Phase 1: Download all")
+        for item in batch_items:
+            if not item["episode_url"]:
+                print("⚠️ No episode URL found, skipping download.")
+                item["succeeded"] = True
+                continue
 
-        print("─" * 80)
-        print(f"🕒 {time_str}")
-        print(f"📡 Podcast: {podcast_url}")
-        print(f"🎙 Episode: {episode_url}")
-        print(f"▶️  Position: {a.get('position')} / {a.get('total')}")
+            item["filepath"] = download_file(
+                item["episode_url"],
+                relative_path=item["relative_path"],
+            )
+            if not item["filepath"]:
+                batch_failed = True
 
-        ts_val = int(dt.timestamp()) if dt else None
-        action_succeeded = False
+        print("📝 Phase 2: Transcribe all")
+        for item in batch_items:
+            if item["succeeded"]:
+                continue
+            if not item["filepath"]:
+                batch_failed = True
+                continue
 
-        if episode_url:
-             # Fetch metadata to determine structure
-             podcast_title, episode_title = get_podcast_metadata(podcast_url, episode_url)
-             
-             if not podcast_title:
-                 podcast_title = "Unknown Podcast"
-             if not episode_title:
-                 # fallback to extracting from URL
-                 episode_title = episode_url.split("/")[-1]
-                 if "?" in episode_title:
-                     episode_title = episode_title.split("?")[0]
-            
-             safe_podcast = sanitize_filename(podcast_title)
-             safe_episode = sanitize_filename(episode_title)
-             
-             # Ensure extension
-             if not safe_episode.lower().endswith('.mp3') and not safe_episode.lower().endswith('.m4a'):
-                  safe_episode += ".mp3" # default guess
+            item["transcript_path"] = transcribe(item["filepath"])
+            if not item["transcript_path"]:
+                batch_failed = True
 
-             relative_path = os.path.join(safe_podcast, safe_episode)
-             
-             filepath = download_file(episode_url, relative_path=relative_path)
-             if filepath:
-                 transcript_path = transcribe(filepath)
-                 if transcript_path:
-                     summary_path = summarize(transcript_path)
-                     if summary_path:
-                         action_succeeded = True
-        else:
-             print("⚠️ No episode URL found, skipping download.")
-             # Non-retryable malformed action; allow checkpoint to move past it.
-             action_succeeded = True
+        print("🧠 Phase 3: Summarize all")
+        for item in batch_items:
+            if item["succeeded"]:
+                continue
+            if not item["transcript_path"]:
+                batch_failed = True
+                continue
 
-        if not action_succeeded and not checkpoint_blocked:
-             checkpoint_blocked = True
-             print("⚠️ Processing failed; keeping checkpoint before this action for retry.")
+            item["summary_path"] = summarize(item["transcript_path"])
+            if item["summary_path"]:
+                item["succeeded"] = True
+            else:
+                batch_failed = True
 
-        # Never move checkpoint past the first failed action in this batch.
-        if not checkpoint_blocked and ts_val is not None and ts_val > max_ts:
-             max_ts = ts_val
-        
-    return max_ts
+        if batch_failed or not all(item["succeeded"] for item in batch_items):
+            print("⚠️ Batch failed; checkpoint will not advance and later batches will not run.")
+            break
+
+        last_timestamp = batch_items[-1].get("timestamp_value")
+        if last_timestamp is not None and last_timestamp > current_since:
+            current_since = last_timestamp
+            save_last_timestamp(current_since)
+
+        if all(item["succeeded"] for item in batch_items):
+            cleanup_batch_audio(batch_items)
+
+    return current_since
 
 def main():
     print(f"🚀 Starting PodGist v{get_app_version()} Loop...")
@@ -117,10 +183,8 @@ def main():
         while True:
             print(f"\nChecking for new actions (since {current_since})...")
             new_since = process_actions(current_since)
-            
             if new_since > current_since:
                 current_since = new_since
-                save_last_timestamp(current_since)
             
             print(f"💤 Sleeping for {POLL_INTERVAL} seconds...")
             time.sleep(POLL_INTERVAL)
