@@ -9,7 +9,7 @@ description = "Podcast summarizer"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-  "google-genai==1.69.0",
+  "google-genai==1.70.0",
   "PyYAML==6.0.3",
   "python-dotenv==1.2.2",
   "requests==2.33.0",
