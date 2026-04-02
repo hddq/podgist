@@ -231,6 +231,44 @@ def process_batched_work_items(
     return succeeded_count, failed_count, dead_count
 
 
+def process_action_batches(
+    actions: list[EpisodeAction],
+    batch_size: int,
+    batch_label_prefix: str,
+    succeeded_count: int,
+    failed_count: int,
+    dead_count: int,
+    save_timestamp_after_batch: bool,
+    initial_since: int,
+) -> tuple[int, int, int, int]:
+    new_since = initial_since
+
+    for batch_index, action_batch in enumerate(chunk_items(actions, batch_size), start=1):
+        batch_items = [build_work_item(action) for action in action_batch]
+        process_episode_batch(batch_items, f"{batch_label_prefix}{batch_index}")
+
+        for item in batch_items:
+            episode_url = item.episode_url
+            if item.succeeded:
+                if episode_url:
+                    mark_succeeded(episode_url)
+                succeeded_count += 1
+            else:
+                moved_to_dead = mark_failed(episode_url, item.action)
+                if moved_to_dead:
+                    dead_count += 1
+                else:
+                    failed_count += 1
+
+            if item.timestamp_value is not None and item.timestamp_value > new_since:
+                new_since = item.timestamp_value
+
+        if save_timestamp_after_batch:
+            save_last_timestamp(new_since)
+
+    return succeeded_count, failed_count, dead_count, new_since
+
+
 def process_actions(since_ts: int) -> int:
     """
     Fetches and processes actions since the given timestamp.
@@ -257,15 +295,16 @@ def process_actions(since_ts: int) -> int:
     )
 
     if retry_actions:
-        retry_work_items = [build_work_item(action) for action in retry_actions]
-        retry_succeeded, retry_failed, retry_dead = process_batched_work_items(
-            retry_work_items,
+        succeeded_count, failed_count, dead_count, _ = process_action_batches(
+            retry_actions,
             checkpoint_batch_size,
             "retry ",
+            succeeded_count,
+            failed_count,
+            dead_count,
+            False,
+            since_ts,
         )
-        succeeded_count += retry_succeeded
-        failed_count += retry_failed
-        dead_count += retry_dead
 
     try:
         data = fetch_episode_actions(since=since_ts)
@@ -300,28 +339,16 @@ def process_actions(since_ts: int) -> int:
     else:
         print()
 
-    new_work_items = [build_work_item(action) for action in deduped_plays]
-    new_since = since_ts
-    for batch_index, batch_items in enumerate(chunk_items(new_work_items, checkpoint_batch_size), start=1):
-        process_episode_batch(batch_items, str(batch_index))
-
-        for item in batch_items:
-            episode_url = item.episode_url
-            if item.succeeded:
-                if episode_url:
-                    mark_succeeded(episode_url)
-                succeeded_count += 1
-            else:
-                moved_to_dead = mark_failed(episode_url, item.action)
-                if moved_to_dead:
-                    dead_count += 1
-                else:
-                    failed_count += 1
-
-            if item.timestamp_value is not None and item.timestamp_value > new_since:
-                new_since = item.timestamp_value
-
-        save_last_timestamp(new_since)
+    succeeded_count, failed_count, dead_count, new_since = process_action_batches(
+        deduped_plays,
+        checkpoint_batch_size,
+        "",
+        succeeded_count,
+        failed_count,
+        dead_count,
+        True,
+        since_ts,
+    )
 
     save_last_timestamp(new_since)
     print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")

@@ -1,5 +1,6 @@
 import re
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 from datetime import datetime
 
 import requests
@@ -66,6 +67,46 @@ def sanitize_filename(name: str | None) -> str:
     safe = "".join([c for c in name if c.isalnum() or c in (' ', '.', '_', '-')]).strip()
     return safe if safe else "unknown"
 
+
+@lru_cache(maxsize=128)
+def _fetch_podcast_feed_index(
+    podcast_url: str,
+) -> tuple[str | None, dict[str, str]]:
+    headers = {"User-Agent": "Mozilla/5.0 (PodGist/1.0)"}
+    resp = requests.get(podcast_url, headers=headers, timeout=30)
+    resp.raise_for_status()
+
+    root = ET.fromstring(resp.content)
+
+    channel = root.find("channel")
+    if channel is None and root.tag == "channel":
+        channel = root
+
+    podcast_title: str | None = None
+    if channel is not None:
+        title_text = channel.findtext("title")
+        if title_text:
+            podcast_title = title_text
+
+    episode_titles: dict[str, str] = {}
+    items = channel.findall("item") if channel is not None else []
+    for item in items:
+        title = item.findtext("title")
+        if not title:
+            continue
+
+        enclosure = item.find("enclosure")
+        if enclosure is not None:
+            enclosure_url = enclosure.get("url")
+            if enclosure_url:
+                episode_titles[enclosure_url] = title
+
+        guid = item.findtext("guid")
+        if guid:
+            episode_titles[guid] = title
+
+    return podcast_title, episode_titles
+
 def get_podcast_metadata(
     podcast_url: str | None,
     episode_url: str | None,
@@ -79,65 +120,18 @@ def get_podcast_metadata(
         return None, None
 
     try:
-        # Some feeds might require a User-Agent
-        headers = {"User-Agent": "Mozilla/5.0 (PodGist/1.0)"}
-        resp = requests.get(podcast_url, headers=headers, timeout=30)
-        resp.raise_for_status()
-        
-        # Parse XML
-        # We use fromstring which parses bytes or string
-        root = ET.fromstring(resp.content)
-        
-        # Handle cases where root is rss/channel or just channel
-        channel = root.find("channel")
-        if channel is None:
-            # Maybe the root IS the channel (Atom? or just weird RSS)
-            # Standard RSS is <rss><channel>...</channel></rss>
-            # Check if root tag is channel?
-            if root.tag == "channel":
-                channel = root
-            else:
-                # Fallback, maybe look for title in root (Atom)
-                # But let's stick to standard RSS structure primarily
-                pass
-
-        podcast_title = "Unknown Podcast"
-        if channel is not None:
-            t = channel.findtext("title")
-            if t:
-                podcast_title = t
-
-        episode_title = "Unknown Episode"
-        
-        # Iterate items to find episode
-        # Support both 'item' (RSS) and 'entry' (Atom - though structure differs)
-        items = channel.findall("item") if channel is not None else []
-        
-        found = False
-        for item in items:
-            # Check enclosure url
-            enclosure = item.find("enclosure")
-            if enclosure is not None:
-                url = enclosure.get("url")
-                # Simple check: exact match or contained
-                # Often episode_url might have extra params
-                if url and (url == episode_url or episode_url in url or url in episode_url):
-                    episode_title = item.findtext("title") or episode_title
-                    found = True
+        podcast_title, episode_titles = _fetch_podcast_feed_index(podcast_url)
+        episode_title = episode_titles.get(episode_url)
+        if episode_title is None:
+            for candidate_url, candidate_title in episode_titles.items():
+                if episode_url in candidate_url or candidate_url in episode_url:
+                    episode_title = candidate_title
                     break
-            
-            # Check guid
-            guid = item.findtext("guid")
-            if guid and guid == episode_url:
-                episode_title = item.findtext("title") or episode_title
-                found = True
-                break
 
-        if not found and channel is not None:
-             # Try to see if we can match by just filename if urls are vastly different
-             # This is risky but helpful
-             pass
-
+        if podcast_title is None:
+            podcast_title = "Unknown Podcast"
+        if episode_title is None:
+            episode_title = "Unknown Episode"
         return podcast_title, episode_title
 
     except Exception as e:
