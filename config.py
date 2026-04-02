@@ -10,8 +10,12 @@ load_dotenv()
 CONFIG_DIR = Path("config")
 CONFIG_FILE = CONFIG_DIR / "config.yaml"
 PROMPT_FILE_DEFAULT = CONFIG_DIR / "prompt.md"
+CHUNK_PROMPT_FILE_DEFAULT = CONFIG_DIR / "prompt_chunk.md"
+FINAL_PROMPT_FILE_DEFAULT = CONFIG_DIR / "prompt_final.md"
 CONFIG_EXAMPLE_FILE = Path("config.example.yaml")
 PROMPT_EXAMPLE_FILE = Path("prompt.example.md")
+CHUNK_PROMPT_EXAMPLE_FILE = Path("prompt_chunk.example.md")
+FINAL_PROMPT_EXAMPLE_FILE = Path("prompt_final.example.md")
 
 
 def ensure_runtime_config_files():
@@ -27,6 +31,14 @@ def ensure_runtime_config_files():
     if not PROMPT_FILE_DEFAULT.exists() and PROMPT_EXAMPLE_FILE.exists():
         shutil.copyfile(PROMPT_EXAMPLE_FILE, PROMPT_FILE_DEFAULT)
         print(f"Created {PROMPT_FILE_DEFAULT} from {PROMPT_EXAMPLE_FILE}.")
+
+    if not CHUNK_PROMPT_FILE_DEFAULT.exists() and CHUNK_PROMPT_EXAMPLE_FILE.exists():
+        shutil.copyfile(CHUNK_PROMPT_EXAMPLE_FILE, CHUNK_PROMPT_FILE_DEFAULT)
+        print(f"Created {CHUNK_PROMPT_FILE_DEFAULT} from {CHUNK_PROMPT_EXAMPLE_FILE}.")
+
+    if not FINAL_PROMPT_FILE_DEFAULT.exists() and FINAL_PROMPT_EXAMPLE_FILE.exists():
+        shutil.copyfile(FINAL_PROMPT_EXAMPLE_FILE, FINAL_PROMPT_FILE_DEFAULT)
+        print(f"Created {FINAL_PROMPT_FILE_DEFAULT} from {FINAL_PROMPT_EXAMPLE_FILE}.")
 
 
 def load_yaml_config():
@@ -107,6 +119,8 @@ SINCE_TIMESTAMP = int(get_config("gpodder.since_timestamp", 0))
 
 # Pipeline
 PIPELINE_BATCH_SIZE = int(get_config("pipeline.batch_size", 1))
+PIPELINE_CHUNK_TOKENS = int(get_config("pipeline.chunk_tokens", 3000))
+PIPELINE_CHUNKING_THRESHOLD = int(get_config("pipeline.chunking_threshold", 4000))
 
 # Paths
 DOWNLOAD_DIR = get_config("paths.downloads", "data/downloads")
@@ -114,6 +128,8 @@ TRANSCRIPT_DIR = get_config("paths.transcripts", "data/transcripts")
 SUMMARY_DIR = get_config("paths.summaries", "data/summaries")
 STATE_FILE = get_config("paths.state_file", "data/state.json")
 PROMPT_FILE = get_config("paths.prompt_file", str(PROMPT_FILE_DEFAULT))
+CHUNK_PROMPT_FILE = get_config("paths.prompt_chunk_file", "config/prompt_chunk.md")
+FINAL_PROMPT_FILE = get_config("paths.prompt_final_file", "config/prompt_final.md")
 
 # LLM Configuration
 LLM_PROVIDER = get_config("llm.provider", "gemini").lower()
@@ -121,6 +137,7 @@ GEMINI_MODEL = get_config("llm.gemini.model", "gemini-3-flash-preview")
 OLLAMA_BASE_URL = get_config("llm.ollama.base_url", "http://localhost:11434")
 OLLAMA_MODEL = get_config("llm.ollama.model", "llama3")
 OLLAMA_AUTO_PULL = get_config_bool("llm.ollama.auto_pull", True)
+OLLAMA_NUM_CTX = int(get_config("llm.ollama.num_ctx", 16384))
 
 # Whisper Server Configuration
 WHISPER_BASE_URL = get_config("whisper.base_url", "http://localhost:8000").rstrip("/")

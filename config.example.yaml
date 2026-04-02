@@ -7,6 +7,8 @@ gpodder:
 pipeline:
   # Number of episodes to process per batch. 1 = effectively sequential.
   batch_size: 5
+  chunk_tokens: 12000
+  chunking_threshold: 14000
 
 paths:
   # Directory where downloaded audio files will be stored
@@ -19,6 +21,8 @@ paths:
   state_file: "data/state.json"
   # Path to the prompt template file
   prompt_file: "config/prompt.md"
+  prompt_chunk_file: "config/prompt_chunk.md"
+  prompt_final_file: "config/prompt_final.md"
 
 llm:
   # LLM Provider to use. Options: "gemini", "ollama"
@@ -33,6 +37,7 @@ llm:
     model: "llama3"
     # Automatically pull the model when Ollama reports it as missing
     auto_pull: true
+    num_ctx: 16384
 
 whisper:
   # Base URL of your OpenAI-compatible Whisper server

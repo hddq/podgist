@@ -3,6 +3,54 @@ import requests
 import xml.etree.ElementTree as ET
 import re
 
+def estimate_tokens(text: str) -> int:
+    return len(text) // 4
+
+def split_into_sentences(text: str) -> list[str]:
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [sentence for sentence in sentences if sentence.strip()]
+
+def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int = 3) -> list[str]:
+    sentences = split_into_sentences(text)
+    if not sentences:
+        return []
+
+    chunks = []
+    current_sentences = []
+
+    for sentence in sentences:
+        sentence_tokens = estimate_tokens(sentence)
+
+        if not current_sentences:
+            if sentence_tokens > chunk_tokens:
+                chunks.append(sentence)
+                continue
+            current_sentences.append(sentence)
+            continue
+
+        candidate_sentences = current_sentences + [sentence]
+        if estimate_tokens(" ".join(candidate_sentences)) <= chunk_tokens:
+            current_sentences.append(sentence)
+            continue
+
+        chunks.append(" ".join(current_sentences))
+
+        overlap = current_sentences[-overlap_sentences:] if overlap_sentences > 0 else []
+        while overlap and estimate_tokens(" ".join(overlap + [sentence])) > chunk_tokens:
+            overlap = overlap[1:]
+
+        if sentence_tokens > chunk_tokens:
+            chunks.append(sentence)
+            current_sentences = []
+            continue
+
+        current_sentences = overlap + [sentence]
+
+    if current_sentences:
+        chunks.append(" ".join(current_sentences))
+
+    return chunks
+
 def sanitize_filename(name):
     """
     Sanitizes a string to be safe for filenames.

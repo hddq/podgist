@@ -6,13 +6,40 @@ from config import (
     GEMINI_API_KEY, 
     SUMMARY_DIR, 
     PROMPT_FILE, 
+    CHUNK_PROMPT_FILE,
+    FINAL_PROMPT_FILE,
     TRANSCRIPT_DIR,
     LLM_PROVIDER,
     GEMINI_MODEL,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
-    OLLAMA_AUTO_PULL
+    OLLAMA_AUTO_PULL,
+    OLLAMA_NUM_CTX,
+    PIPELINE_CHUNK_TOKENS,
+    PIPELINE_CHUNKING_THRESHOLD,
 )
+from utils import chunk_transcript, estimate_tokens
+
+def _read_prompt(path: str) -> str | None:
+    if not os.path.exists(path):
+        print(f"Prompt file not found: {path}")
+        return None
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        print(f"Error reading prompt file {path}: {e}")
+        return None
+
+def _call_llm(prompt: str) -> str | None:
+    if LLM_PROVIDER == "gemini":
+        return summarize_with_gemini(prompt)
+    if LLM_PROVIDER == "ollama":
+        return summarize_with_ollama(prompt)
+
+    print(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
+    return None
 
 def summarize_with_gemini(prompt):
     """
@@ -42,7 +69,11 @@ def summarize_with_ollama(prompt):
     payload = {
         "model": OLLAMA_MODEL,
         "prompt": prompt,
-        "stream": False
+        "stream": False,
+        "options": {
+            "num_ctx": OLLAMA_NUM_CTX
+        },
+        "think": False
     }
 
     def pull_model_if_missing():
@@ -79,6 +110,39 @@ def summarize_with_ollama(prompt):
     except Exception as e:
         print(f"Ollama summarization failed: {e}")
         return None
+
+def _summarize_chunked(transcript_text: str) -> str | None:
+    chunk_prompt_template = _read_prompt(CHUNK_PROMPT_FILE)
+    final_prompt_template = _read_prompt(FINAL_PROMPT_FILE)
+    if not chunk_prompt_template or not final_prompt_template:
+        return None
+
+    chunks = chunk_transcript(
+        transcript_text,
+        chunk_tokens=PIPELINE_CHUNK_TOKENS,
+    )
+    total_chunks = len(chunks)
+    partial_summaries = []
+
+    for chunk_index, chunk_text in enumerate(chunks, start=1):
+        prompt = (
+            chunk_prompt_template
+            .replace("{transcript}", chunk_text)
+            .replace("{chunk_index}", str(chunk_index))
+            .replace("{total_chunks}", str(total_chunks))
+        )
+        partial_summary = _call_llm(prompt)
+        if not partial_summary:
+            print(f"Warning: failed to summarize chunk {chunk_index}/{total_chunks}.")
+            continue
+        partial_summaries.append(partial_summary)
+
+    if not partial_summaries:
+        return None
+
+    combined_summaries = "\n\n---\n\n".join(partial_summaries)
+    final_prompt = final_prompt_template.replace("{transcript}", combined_summaries)
+    return _call_llm(final_prompt)
 
 def summarize(transcript_path):
     """
@@ -121,31 +185,19 @@ def summarize(transcript_path):
         print(f"Error reading transcript: {e}")
         return None
 
-    # Read prompt
-    if not os.path.exists(PROMPT_FILE):
-        print(f"Prompt file not found: {PROMPT_FILE}")
-        return None
-
-    try:
-        with open(PROMPT_FILE, "r", encoding="utf-8") as f:
-            prompt_template = f.read()
-    except Exception as e:
-        print(f"Error reading prompt file: {e}")
-        return None
-
-    # Construct prompt
-    prompt = prompt_template.replace("{transcript}", transcript_text)
+    token_count = estimate_tokens(transcript_text)
+    print(f"Estimated transcript tokens: {token_count}")
 
     print(f"Summarizing {os.path.basename(transcript_path)} using {LLM_PROVIDER}...")
 
-    summary_text = None
-    if LLM_PROVIDER == "gemini":
-        summary_text = summarize_with_gemini(prompt)
-    elif LLM_PROVIDER == "ollama":
-        summary_text = summarize_with_ollama(prompt)
+    if token_count <= PIPELINE_CHUNKING_THRESHOLD:
+        prompt_template = _read_prompt(PROMPT_FILE)
+        if not prompt_template:
+            return None
+        prompt = prompt_template.replace("{transcript}", transcript_text)
+        summary_text = _call_llm(prompt)
     else:
-        print(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
-        return None
+        summary_text = _summarize_chunked(transcript_text)
 
     if summary_text:
         try:
