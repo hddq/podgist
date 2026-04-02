@@ -1,8 +1,15 @@
 import os
+
 import requests
+
 from config import DOWNLOAD_DIR
 
-def download_file(url, filename=None, relative_path=None):
+
+def download_file(
+    url: str,
+    filename: str | None = None,
+    relative_path: str | None = None,
+) -> str | None:
     if not os.path.exists(DOWNLOAD_DIR):
         os.makedirs(DOWNLOAD_DIR)
 
@@ -34,12 +41,16 @@ def download_file(url, filename=None, relative_path=None):
     try:
         # Fake user agent to avoid some 403s from strict servers
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/91.0.4472.124 Safari/537.36"
+            )
         }
-        with requests.get(url, stream=True, timeout=60, headers=headers) as r:
-            r.raise_for_status()
-            with open(filepath, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
+        with requests.get(url, stream=True, timeout=60, headers=headers) as response:
+            response.raise_for_status()
+            with open(filepath, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
         print(f"Download complete: {filepath}")
         return filepath

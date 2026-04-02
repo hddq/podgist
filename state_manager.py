@@ -2,13 +2,23 @@ import json
 import os
 import tempfile
 import time
+from typing import cast
+
 from config import SINCE_TIMESTAMP, STATE_FILE
+from models import (
+    DeadEntry,
+    EpisodeAction,
+    FailedEntry,
+    StateData,
+    normalize_episode_action,
+    string_key_dict,
+)
 
 
 MAX_ATTEMPTS = 5
 
 
-def _default_state():
+def _default_state() -> StateData:
     return {
         "last_timestamp": int(SINCE_TIMESTAMP),
         "failed": {},
@@ -16,7 +26,39 @@ def _default_state():
     }
 
 
-def _load_state():
+def _normalize_failed_entry(value: object) -> FailedEntry | None:
+    data = string_key_dict(value)
+    if not data:
+        return None
+
+    attempts = data.get("attempts", 0)
+    last_attempt_ts = data.get("last_attempt_ts", 0)
+    if not isinstance(attempts, int) or not isinstance(last_attempt_ts, int):
+        return None
+
+    return {
+        "attempts": attempts,
+        "last_attempt_ts": last_attempt_ts,
+        "action": normalize_episode_action(data.get("action")),
+    }
+
+
+def _normalize_dead_entry(value: object) -> DeadEntry | None:
+    data = string_key_dict(value)
+    if not data:
+        return None
+
+    attempts = data.get("attempts", 0)
+    if not isinstance(attempts, int):
+        return None
+
+    return {
+        "attempts": attempts,
+        "action": normalize_episode_action(data.get("action")),
+    }
+
+
+def _load_state() -> StateData:
     """
     Loads the full state from disk, returning defaults if the file is missing or invalid.
     """
@@ -25,26 +67,53 @@ def _load_state():
 
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            data = string_key_dict(cast(object, json.load(f)))
     except (json.JSONDecodeError, IOError):
         print(f"Warning: Could not read {STATE_FILE}. Using default state.")
         return _default_state()
 
-    if not isinstance(data, dict):
+    if not data:
         print(f"Warning: Invalid state format in {STATE_FILE}. Using default state.")
         return _default_state()
 
     state = _default_state()
-    try:
-        state["last_timestamp"] = int(data.get("last_timestamp", SINCE_TIMESTAMP))
-    except (TypeError, ValueError):
+    last_timestamp = data.get("last_timestamp", SINCE_TIMESTAMP)
+    if isinstance(last_timestamp, bool):
+        state["last_timestamp"] = int(last_timestamp)
+    elif isinstance(last_timestamp, (int, float, str)):
+        try:
+            state["last_timestamp"] = int(last_timestamp)
+        except ValueError:
+            state["last_timestamp"] = int(SINCE_TIMESTAMP)
+    else:
         state["last_timestamp"] = int(SINCE_TIMESTAMP)
-    state["failed"] = data.get("failed", {}) if isinstance(data.get("failed", {}), dict) else {}
-    state["dead"] = data.get("dead", {}) if isinstance(data.get("dead", {}), dict) else {}
+
+    raw_failed = data.get("failed", {})
+    if isinstance(raw_failed, dict):
+        failed_entries: dict[str, FailedEntry] = {}
+        for episode_url, raw_entry in cast(dict[object, object], raw_failed).items():
+            if not isinstance(episode_url, str):
+                continue
+            entry = _normalize_failed_entry(raw_entry)
+            if entry is not None:
+                failed_entries[episode_url] = entry
+        state["failed"] = failed_entries
+
+    raw_dead = data.get("dead", {})
+    if isinstance(raw_dead, dict):
+        dead_entries: dict[str, DeadEntry] = {}
+        for episode_url, raw_entry in cast(dict[object, object], raw_dead).items():
+            if not isinstance(episode_url, str):
+                continue
+            entry = _normalize_dead_entry(raw_entry)
+            if entry is not None:
+                dead_entries[episode_url] = entry
+        state["dead"] = dead_entries
+
     return state
 
 
-def _write_state(state):
+def _write_state(state: StateData) -> None:
     """
     Writes the full state atomically so the state file remains valid JSON.
     """
@@ -66,7 +135,7 @@ def _write_state(state):
         raise
 
 
-def load_last_timestamp():
+def load_last_timestamp() -> int:
     """
     Loads the last timestamp from state.json.
     If the file doesn't exist or is invalid, returns the default SINCE_TIMESTAMP from config.
@@ -74,7 +143,7 @@ def load_last_timestamp():
     return _load_state()["last_timestamp"]
 
 
-def save_last_timestamp(timestamp):
+def save_last_timestamp(timestamp: int) -> None:
     """
     Saves the given timestamp to state.json.
     """
@@ -87,14 +156,14 @@ def save_last_timestamp(timestamp):
         print(f"Error saving state: {e}")
 
 
-def load_failed():
+def load_failed() -> dict[str, FailedEntry]:
     """
     Loads the failed episode queue from state.json.
     """
     return _load_state()["failed"]
 
 
-def mark_failed(episode_url, action):
+def mark_failed(episode_url: str | None, action: EpisodeAction) -> bool:
     """
     Records a failed episode attempt and moves it to the dead letter queue after MAX_ATTEMPTS.
     """
@@ -106,9 +175,9 @@ def mark_failed(episode_url, action):
     failed = state["failed"]
     dead = state["dead"]
 
-    existing = failed.get(episode_url, {})
-    attempts = int(existing.get("attempts", 0)) + 1
-    entry = {
+    existing = failed.get(episode_url)
+    attempts = (existing["attempts"] if existing is not None else 0) + 1
+    entry: FailedEntry = {
         "attempts": attempts,
         "last_attempt_ts": int(time.time()),
         "action": action,
@@ -129,7 +198,7 @@ def mark_failed(episode_url, action):
     return False
 
 
-def mark_succeeded(episode_url):
+def mark_succeeded(episode_url: str | None) -> None:
     """
     Removes a succeeded episode from the failed queue.
     """

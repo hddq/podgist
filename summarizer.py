@@ -1,24 +1,29 @@
+from typing import Any, cast
+
 import os
+
 import requests
-import json
 from google import genai
+
 from config import (
-    GEMINI_API_KEY, 
-    SUMMARY_DIR, 
-    PROMPT_FILE, 
     CHUNK_PROMPT_FILE,
     FINAL_PROMPT_FILE,
-    TRANSCRIPT_DIR,
-    LLM_PROVIDER,
+    GEMINI_API_KEY,
     GEMINI_MODEL,
+    LLM_PROVIDER,
+    OLLAMA_AUTO_PULL,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
-    OLLAMA_AUTO_PULL,
     OLLAMA_NUM_CTX,
     PIPELINE_CHUNK_TOKENS,
     PIPELINE_CHUNKING_THRESHOLD,
+    PROMPT_FILE,
+    SUMMARY_DIR,
+    TRANSCRIPT_DIR,
 )
+from models import string_key_dict
 from utils import chunk_transcript, estimate_tokens
+
 
 def _read_prompt(path: str) -> str | None:
     if not os.path.exists(path):
@@ -32,6 +37,7 @@ def _read_prompt(path: str) -> str | None:
         print(f"Error reading prompt file {path}: {e}")
         return None
 
+
 def _call_llm(prompt: str) -> str | None:
     if LLM_PROVIDER == "gemini":
         return summarize_with_gemini(prompt)
@@ -41,7 +47,8 @@ def _call_llm(prompt: str) -> str | None:
     print(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
     return None
 
-def summarize_with_gemini(prompt):
+
+def summarize_with_gemini(prompt: str) -> str | None:
     """
     Summarizes the prompt using Google Gemini.
     """
@@ -51,16 +58,18 @@ def summarize_with_gemini(prompt):
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=GEMINI_MODEL, 
-            contents=prompt
+        response = cast(Any, client.models).generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
         )
-        return response.text
+        text = getattr(response, "text", None)
+        return text if isinstance(text, str) else None
     except Exception as e:
         print(f"Gemini summarization failed: {e}")
         return None
 
-def summarize_with_ollama(prompt):
+
+def summarize_with_ollama(prompt: str) -> str | None:
     """
     Summarizes the prompt using Ollama.
     """
@@ -70,18 +79,13 @@ def summarize_with_ollama(prompt):
         "model": OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False,
-        "options": {
-            "num_ctx": OLLAMA_NUM_CTX
-        },
-        "think": False
+        "options": {"num_ctx": OLLAMA_NUM_CTX},
+        "think": False,
     }
 
-    def pull_model_if_missing():
+    def pull_model_if_missing() -> None:
         pull_url = f"{base_url}/api/pull"
-        pull_payload = {
-            "name": OLLAMA_MODEL,
-            "stream": False
-        }
+        pull_payload = {"name": OLLAMA_MODEL, "stream": False}
         print(f"Ollama model '{OLLAMA_MODEL}' is missing. Pulling it now...")
         pull_response = requests.post(pull_url, json=pull_payload, timeout=1800)
         pull_response.raise_for_status()
@@ -92,24 +96,34 @@ def summarize_with_ollama(prompt):
         if response.status_code == 404 and OLLAMA_AUTO_PULL:
             error_text = ""
             try:
-                error_text = response.json().get("error", "")
+                error_data = string_key_dict(response.json())
+                raw_error_text = error_data.get("error", "")
+                if isinstance(raw_error_text, str):
+                    error_text = raw_error_text
             except Exception:
                 pass
             if "not found" in error_text.lower():
                 pull_model_if_missing()
                 retry_response = requests.post(url, json=payload, timeout=300)
                 retry_response.raise_for_status()
-                retry_data = retry_response.json()
-                return retry_data.get("response")
+                retry_data = string_key_dict(retry_response.json())
+                if not retry_data:
+                    return None
+                retry_text = retry_data.get("response")
+                return retry_text if isinstance(retry_text, str) else None
         response.raise_for_status()
-        data = response.json()
-        return data.get("response")
+        data = string_key_dict(response.json())
+        if not data:
+            return None
+        response_text = data.get("response")
+        return response_text if isinstance(response_text, str) else None
     except requests.exceptions.ConnectionError:
         print(f"Failed to connect to Ollama at {url}. Is Ollama running?")
         return None
     except Exception as e:
         print(f"Ollama summarization failed: {e}")
         return None
+
 
 def _summarize_chunked(transcript_text: str) -> str | None:
     chunk_prompt_template = _read_prompt(CHUNK_PROMPT_FILE)
@@ -122,7 +136,7 @@ def _summarize_chunked(transcript_text: str) -> str | None:
         chunk_tokens=PIPELINE_CHUNK_TOKENS,
     )
     total_chunks = len(chunks)
-    partial_summaries = []
+    partial_summaries: list[str] = []
 
     for chunk_index, chunk_text in enumerate(chunks, start=1):
         prompt = (
@@ -144,7 +158,8 @@ def _summarize_chunked(transcript_text: str) -> str | None:
     final_prompt = final_prompt_template.replace("{transcript}", combined_summaries)
     return _call_llm(final_prompt)
 
-def summarize(transcript_path):
+
+def summarize(transcript_path: str) -> str | None:
     """
     Summarizes the given transcript file using the configured LLM provider.
     """

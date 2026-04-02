@@ -16,6 +16,7 @@
         in {
           default = pkgs.mkShell {
             packages = with pkgs; [
+              nodejs
               python314
               ffmpeg
             ];
@@ -33,7 +34,7 @@
               if [ -f "pyproject.toml" ]; then
                 echo "Syncing Python dependencies..."
                 pip install --quiet --upgrade pip
-                pip install --quiet --editable .
+                pip install --quiet --editable '.[dev]'
               else
                 echo "⚠️ pyproject.toml not found!"
               fi

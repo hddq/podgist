@@ -1,12 +1,15 @@
-import time
+import os
 import sys
+import time
+import tomllib
+from collections.abc import Iterator
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version as package_version
-from gpodder import fetch_episode_actions
-from utils import parse_timestamp, get_podcast_metadata, sanitize_filename
+
+from config import PIPELINE_BATCH_SIZE, TRANSCRIPT_DIR, SUMMARY_DIR
 from downloader import download_file
-from transcriber import transcribe
-from summarizer import summarize
+from gpodder import fetch_episode_actions
+from models import EpisodeAction, WorkItem, string_key_dict
 from state_manager import (
     load_failed,
     load_last_timestamp,
@@ -14,24 +17,29 @@ from state_manager import (
     mark_succeeded,
     save_last_timestamp,
 )
-from config import PIPELINE_BATCH_SIZE, TRANSCRIPT_DIR, SUMMARY_DIR
-import os
-import tomllib
+from summarizer import summarize
+from transcriber import transcribe
+from utils import get_podcast_metadata, parse_timestamp, sanitize_filename
 
 POLL_INTERVAL = 600  # 10 minutes
 
 
-def get_app_version():
+def get_app_version() -> str:
     try:
         return package_version("podgist")
     except PackageNotFoundError:
         pyproject_path = os.path.join(os.path.dirname(__file__), "pyproject.toml")
         with open(pyproject_path, "rb") as f:
             data = tomllib.load(f)
-        return data["project"]["version"]
+        project = string_key_dict(data.get("project"))
+        if not project:
+            return "unknown"
+
+        version = project.get("version")
+        return version if isinstance(version, str) else "unknown"
 
 
-def build_work_item(action):
+def build_work_item(action: EpisodeAction) -> WorkItem:
     raw_ts = action.get("timestamp")
     dt = parse_timestamp(raw_ts)
     time_str = dt.isoformat() if dt else "unknown"
@@ -63,29 +71,27 @@ def build_work_item(action):
 
         relative_path = os.path.join(safe_podcast, safe_episode)
 
-    return {
-        "action": action,
-        "timestamp": dt,
-        "timestamp_value": int(dt.timestamp()) if dt else None,
-        "episode_url": episode_url,
-        "podcast_url": podcast_url,
-        "relative_path": relative_path,
-        "filepath": None,
-        "transcript_path": (
+    return WorkItem(
+        action=action,
+        timestamp=dt,
+        timestamp_value=int(dt.timestamp()) if dt else None,
+        episode_url=episode_url,
+        podcast_url=podcast_url,
+        relative_path=relative_path,
+        transcript_path=(
             os.path.join(TRANSCRIPT_DIR, relative_path + ".txt")
-            if relative_path else None
+            if relative_path
+            else None
         ),
-        "summary_path": (
+        summary_path=(
             os.path.join(SUMMARY_DIR, relative_path + ".md")
-            if relative_path else None
+            if relative_path
+            else None
         ),
-        "download_ok": False,
-        "transcript_ready": False,
-        "succeeded": False,
-    }
+    )
 
 
-def cleanup_audio_file(filepath):
+def cleanup_audio_file(filepath: str | None) -> None:
     if not filepath:
         return
 
@@ -98,34 +104,34 @@ def cleanup_audio_file(filepath):
         print(f"Warning: failed to remove audio file {filepath}: {e}")
 
 
-def chunk_items(items, chunk_size):
+def chunk_items[T](items: list[T], chunk_size: int) -> Iterator[list[T]]:
     for index in range(0, len(items), chunk_size):
         yield items[index:index + chunk_size]
 
 
-def prepare_work_item(item):
+def prepare_work_item(item: WorkItem) -> bool:
     """
     Applies early success shortcuts before batch phase processing.
     """
-    if not item["episode_url"]:
+    if not item.episode_url:
         print("⚠️ No episode URL found, skipping episode.")
-        item["succeeded"] = True
+        item.succeeded = True
         return True
 
-    if item["summary_path"] and os.path.exists(item["summary_path"]):
-        print(f"Summary already exists: {item['summary_path']}")
-        item["succeeded"] = True
+    if item.summary_path and os.path.exists(item.summary_path):
+        print(f"Summary already exists: {item.summary_path}")
+        item.succeeded = True
         return True
 
-    if item["transcript_path"] and os.path.exists(item["transcript_path"]):
-        print(f"Transcript already exists: {item['transcript_path']}")
-        item["transcript_ready"] = True
+    if item.transcript_path and os.path.exists(item.transcript_path):
+        print(f"Transcript already exists: {item.transcript_path}")
+        item.transcript_ready = True
         return False
 
     return False
 
 
-def process_episode_batch(batch_items, label):
+def process_episode_batch(batch_items: list[WorkItem], label: str) -> list[WorkItem]:
     print(f"\n📦 Processing batch {label} ({len(batch_items)} episode(s))")
 
     for item in batch_items:
@@ -133,43 +139,44 @@ def process_episode_batch(batch_items, label):
 
     print("⬇️  Phase 1: Download all")
     for item in batch_items:
-        if item["succeeded"] or item["transcript_ready"]:
+        if item.succeeded or item.transcript_ready:
             continue
 
-        item["filepath"] = download_file(
-            item["episode_url"],
-            relative_path=item["relative_path"],
+        if item.episode_url is None:
+            continue
+
+        item.filepath = download_file(
+            item.episode_url,
+            relative_path=item.relative_path,
         )
-        item["download_ok"] = bool(item["filepath"])
+        item.download_ok = bool(item.filepath)
 
     print("📝 Phase 2: Transcribe all")
     for item in batch_items:
-        if item["succeeded"] or item["transcript_ready"]:
+        if item.succeeded or item.transcript_ready:
             continue
-        if not item["download_ok"]:
+        if not item.download_ok or item.filepath is None:
             continue
 
-        item["transcript_path"] = transcribe(item["filepath"])
-        item["transcript_ready"] = bool(item["transcript_path"])
+        item.transcript_path = transcribe(item.filepath)
+        item.transcript_ready = bool(item.transcript_path)
 
     print("🧠 Phase 3: Summarize all")
     for item in batch_items:
-        if item["succeeded"]:
-            continue
-        if not item["transcript_ready"]:
+        if item.succeeded or not item.transcript_ready or item.transcript_path is None:
             continue
 
-        item["summary_path"] = summarize(item["transcript_path"])
-        if item["summary_path"]:
-            item["succeeded"] = True
-            cleanup_audio_file(item.get("filepath"))
+        item.summary_path = summarize(item.transcript_path)
+        if item.summary_path:
+            item.succeeded = True
+            cleanup_audio_file(item.filepath)
 
     return batch_items
 
 
-def deduplicate_actions(actions):
-    deduped = []
-    by_episode_url = {}
+def deduplicate_actions(actions: list[EpisodeAction]) -> list[EpisodeAction]:
+    deduped: list[EpisodeAction] = []
+    by_episode_url: dict[str, int] = {}
 
     for action in actions:
         episode_url = action.get("episode")
@@ -195,7 +202,11 @@ def deduplicate_actions(actions):
     return deduped
 
 
-def process_batched_work_items(work_items, batch_size, batch_label_prefix):
+def process_batched_work_items(
+    work_items: list[WorkItem],
+    batch_size: int,
+    batch_label_prefix: str,
+) -> tuple[int, int, int]:
     succeeded_count = 0
     failed_count = 0
     dead_count = 0
@@ -204,14 +215,14 @@ def process_batched_work_items(work_items, batch_size, batch_label_prefix):
         process_episode_batch(batch_items, f"{batch_label_prefix}{batch_index}")
 
         for item in batch_items:
-            episode_url = item.get("episode_url")
-            if item["succeeded"]:
+            episode_url = item.episode_url
+            if item.succeeded:
                 if episode_url:
                     mark_succeeded(episode_url)
                 succeeded_count += 1
                 continue
 
-            moved_to_dead = mark_failed(episode_url, item["action"])
+            moved_to_dead = mark_failed(episode_url, item.action)
             if moved_to_dead:
                 dead_count += 1
             else:
@@ -220,7 +231,7 @@ def process_batched_work_items(work_items, batch_size, batch_label_prefix):
     return succeeded_count, failed_count, dead_count
 
 
-def process_actions(since_ts):
+def process_actions(since_ts: int) -> int:
     """
     Fetches and processes actions since the given timestamp.
     Returns the updated timestamp after processing all fetched actions.
@@ -235,7 +246,7 @@ def process_actions(since_ts):
     if failed_queue:
         print("\n🔁 Retrying failed episodes...")
     retry_actions = [
-        failed_entry.get("action") or {}
+        failed_entry["action"]
         for failed_entry in failed_queue.values()
     ]
     retry_actions.sort(key=lambda a: parse_timestamp(a.get("timestamp")) or datetime.min)
@@ -295,20 +306,20 @@ def process_actions(since_ts):
         process_episode_batch(batch_items, str(batch_index))
 
         for item in batch_items:
-            episode_url = item.get("episode_url")
-            if item["succeeded"]:
+            episode_url = item.episode_url
+            if item.succeeded:
                 if episode_url:
                     mark_succeeded(episode_url)
                 succeeded_count += 1
             else:
-                moved_to_dead = mark_failed(episode_url, item["action"])
+                moved_to_dead = mark_failed(episode_url, item.action)
                 if moved_to_dead:
                     dead_count += 1
                 else:
                     failed_count += 1
 
-            if item["timestamp_value"] is not None and item["timestamp_value"] > new_since:
-                new_since = item["timestamp_value"]
+            if item.timestamp_value is not None and item.timestamp_value > new_since:
+                new_since = item.timestamp_value
 
         save_last_timestamp(new_since)
 
@@ -316,7 +327,7 @@ def process_actions(since_ts):
     print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
     return new_since
 
-def main():
+def main() -> None:
     print(f"🚀 Starting PodGist v{get_app_version()} Loop...")
     current_since = load_last_timestamp()
     print(f"📅 Starting check from timestamp: {current_since}")

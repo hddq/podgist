@@ -1,24 +1,29 @@
 import os
 import shutil
 from pathlib import Path
+from typing import Final, cast
+
 import yaml
 from dotenv import load_dotenv
+from models import string_key_dict
 
 # Load environment variables (secrets only)
 load_dotenv()
 
-CONFIG_DIR = Path("config")
-CONFIG_FILE = CONFIG_DIR / "config.yaml"
-PROMPT_FILE_DEFAULT = CONFIG_DIR / "prompt.md"
-CHUNK_PROMPT_FILE_DEFAULT = CONFIG_DIR / "prompt_chunk.md"
-FINAL_PROMPT_FILE_DEFAULT = CONFIG_DIR / "prompt_final.md"
-CONFIG_EXAMPLE_FILE = Path("config.example.yaml")
-PROMPT_EXAMPLE_FILE = Path("prompt.example.md")
-CHUNK_PROMPT_EXAMPLE_FILE = Path("prompt_chunk.example.md")
-FINAL_PROMPT_EXAMPLE_FILE = Path("prompt_final.example.md")
+YamlMapping = dict[str, object]
+
+CONFIG_DIR: Final[Path] = Path("config")
+CONFIG_FILE: Final[Path] = CONFIG_DIR / "config.yaml"
+PROMPT_FILE_DEFAULT: Final[Path] = CONFIG_DIR / "prompt.md"
+CHUNK_PROMPT_FILE_DEFAULT: Final[Path] = CONFIG_DIR / "prompt_chunk.md"
+FINAL_PROMPT_FILE_DEFAULT: Final[Path] = CONFIG_DIR / "prompt_final.md"
+CONFIG_EXAMPLE_FILE: Final[Path] = Path("config.example.yaml")
+PROMPT_EXAMPLE_FILE: Final[Path] = Path("prompt.example.md")
+CHUNK_PROMPT_EXAMPLE_FILE: Final[Path] = Path("prompt_chunk.example.md")
+FINAL_PROMPT_EXAMPLE_FILE: Final[Path] = Path("prompt_final.example.md")
 
 
-def ensure_runtime_config_files():
+def ensure_runtime_config_files() -> None:
     """
     Ensures the runtime config directory contains the required files.
     """
@@ -41,7 +46,7 @@ def ensure_runtime_config_files():
         print(f"Created {FINAL_PROMPT_FILE_DEFAULT} from {FINAL_PROMPT_EXAMPLE_FILE}.")
 
 
-def load_yaml_config():
+def load_yaml_config() -> YamlMapping:
     """
     Loads configuration from config/config.yaml.
     """
@@ -53,15 +58,21 @@ def load_yaml_config():
 
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f) or {}
+            loaded = yaml.safe_load(f)
     except Exception as e:
         print(f"Warning: Failed to load config from {CONFIG_FILE}: {e}")
+        return {}
 
-    return {}
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        print(f"Warning: Invalid config format in {CONFIG_FILE}. Using defaults only.")
+        return {}
+    return string_key_dict(cast(object, loaded))
 
 _yaml_conf = load_yaml_config()
 
-def get_config(key_path, default=None):
+def get_config(key_path: str, default: object | None = None) -> object | None:
     """
     Retrieves a configuration value from the loaded YAML configuration.
     
@@ -69,24 +80,47 @@ def get_config(key_path, default=None):
         key_path (str): Dot-notation path to the key (e.g. "section.subsection.key")
         default: Value to return if key is not found
     """
-    keys = key_path.split('.')
-    value = _yaml_conf
-    try:
-        for k in keys:
-            if isinstance(value, dict) and k in value:
-                value = value[k]
-            else:
-                value = None
-                break
-    except Exception:
-        value = None
-        
+    keys = key_path.split(".")
+    value: object = _yaml_conf
+    for key in keys:
+        mapping = string_key_dict(value)
+        if not mapping:
+            return default
+
+        current = mapping.get(key)
+        if current is None:
+            return default
+        value = current
+
     if value is not None:
         return value
 
     return default
 
-def get_config_bool(key_path, default=False):
+def get_config_int(key_path: str, default: int) -> int:
+    value = get_config(key_path, default)
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return default
+    return default
+
+
+def get_config_str(key_path: str, default: str) -> str:
+    value = get_config(key_path, default)
+    if isinstance(value, str):
+        return value
+    return default
+
+
+def get_config_bool(key_path: str, default: bool = False) -> bool:
     """
     Retrieves a boolean config value with tolerant parsing.
     """
@@ -104,42 +138,42 @@ def get_config_bool(key_path, default=False):
     return bool(default)
 
 # --- Secrets (From Environment Only) ---
-GPODDER_USERNAME = os.getenv("GPODDER_USERNAME")
-GPODDER_PASSWORD = os.getenv("GPODDER_PASSWORD")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-WHISPER_API_KEY = os.getenv("WHISPER_API_KEY")
+GPODDER_USERNAME: str | None = os.getenv("GPODDER_USERNAME")
+GPODDER_PASSWORD: str | None = os.getenv("GPODDER_PASSWORD")
+GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
+WHISPER_API_KEY: str | None = os.getenv("WHISPER_API_KEY")
 
-AUTH = (GPODDER_USERNAME, GPODDER_PASSWORD)
+AUTH: tuple[str | None, str | None] = (GPODDER_USERNAME, GPODDER_PASSWORD)
 
 # --- Configuration (From YAML Only) ---
 
 # gPodder
-GPODDER_BASE_URL = get_config("gpodder.base_url", "").rstrip("/")
-SINCE_TIMESTAMP = int(get_config("gpodder.since_timestamp", 0))
+GPODDER_BASE_URL: str = get_config_str("gpodder.base_url", "").rstrip("/")
+SINCE_TIMESTAMP: int = get_config_int("gpodder.since_timestamp", 0)
 
 # Pipeline
-PIPELINE_BATCH_SIZE = int(get_config("pipeline.batch_size", 1))
-PIPELINE_CHUNK_TOKENS = int(get_config("pipeline.chunk_tokens", 3000))
-PIPELINE_CHUNKING_THRESHOLD = int(get_config("pipeline.chunking_threshold", 4000))
+PIPELINE_BATCH_SIZE: int = get_config_int("pipeline.batch_size", 1)
+PIPELINE_CHUNK_TOKENS: int = get_config_int("pipeline.chunk_tokens", 3000)
+PIPELINE_CHUNKING_THRESHOLD: int = get_config_int("pipeline.chunking_threshold", 4000)
 
 # Paths
-DOWNLOAD_DIR = get_config("paths.downloads", "data/downloads")
-TRANSCRIPT_DIR = get_config("paths.transcripts", "data/transcripts")
-SUMMARY_DIR = get_config("paths.summaries", "data/summaries")
-STATE_FILE = get_config("paths.state_file", "data/state.json")
-PROMPT_FILE = get_config("paths.prompt_file", str(PROMPT_FILE_DEFAULT))
-CHUNK_PROMPT_FILE = get_config("paths.prompt_chunk_file", "config/prompt_chunk.md")
-FINAL_PROMPT_FILE = get_config("paths.prompt_final_file", "config/prompt_final.md")
+DOWNLOAD_DIR: str = get_config_str("paths.downloads", "data/downloads")
+TRANSCRIPT_DIR: str = get_config_str("paths.transcripts", "data/transcripts")
+SUMMARY_DIR: str = get_config_str("paths.summaries", "data/summaries")
+STATE_FILE: str = get_config_str("paths.state_file", "data/state.json")
+PROMPT_FILE: str = get_config_str("paths.prompt_file", str(PROMPT_FILE_DEFAULT))
+CHUNK_PROMPT_FILE: str = get_config_str("paths.prompt_chunk_file", "config/prompt_chunk.md")
+FINAL_PROMPT_FILE: str = get_config_str("paths.prompt_final_file", "config/prompt_final.md")
 
 # LLM Configuration
-LLM_PROVIDER = get_config("llm.provider", "gemini").lower()
-GEMINI_MODEL = get_config("llm.gemini.model", "gemini-3-flash-preview")
-OLLAMA_BASE_URL = get_config("llm.ollama.base_url", "http://localhost:11434")
-OLLAMA_MODEL = get_config("llm.ollama.model", "llama3")
-OLLAMA_AUTO_PULL = get_config_bool("llm.ollama.auto_pull", True)
-OLLAMA_NUM_CTX = int(get_config("llm.ollama.num_ctx", 16384))
+LLM_PROVIDER: str = get_config_str("llm.provider", "gemini").lower()
+GEMINI_MODEL: str = get_config_str("llm.gemini.model", "gemini-3-flash-preview")
+OLLAMA_BASE_URL: str = get_config_str("llm.ollama.base_url", "http://localhost:11434")
+OLLAMA_MODEL: str = get_config_str("llm.ollama.model", "llama3")
+OLLAMA_AUTO_PULL: bool = get_config_bool("llm.ollama.auto_pull", True)
+OLLAMA_NUM_CTX: int = get_config_int("llm.ollama.num_ctx", 16384)
 
 # Whisper Server Configuration
-WHISPER_BASE_URL = get_config("whisper.base_url", "http://localhost:8000").rstrip("/")
-WHISPER_MODEL = get_config("whisper.model", "base")
-WHISPER_TIMEOUT = int(get_config("whisper.timeout", 600))
+WHISPER_BASE_URL: str = get_config_str("whisper.base_url", "http://localhost:8000").rstrip("/")
+WHISPER_MODEL: str = get_config_str("whisper.model", "base")
+WHISPER_TIMEOUT: int = get_config_int("whisper.timeout", 600)

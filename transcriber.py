@@ -1,6 +1,8 @@
 import os
 import subprocess
+
 import requests
+
 from config import (
     DOWNLOAD_DIR,
     TRANSCRIPT_DIR,
@@ -9,9 +11,10 @@ from config import (
     WHISPER_MODEL,
     WHISPER_TIMEOUT,
 )
+from models import string_key_dict
 
 
-def convert_to_wav_16k(input_path):
+def convert_to_wav_16k(input_path: str) -> tuple[str | None, bool]:
     """
     Converts input audio to 16kHz WAV using ffmpeg.
     Returns a tuple (path to the wav file, boolean indicating if it was newly created).
@@ -41,12 +44,12 @@ def convert_to_wav_16k(input_path):
         return None, False
 
 
-def transcribe_with_whisper_server(wav_path):
+def transcribe_with_whisper_server(wav_path: str) -> str | None:
     """
     Sends audio to an OpenAI-compatible Whisper server and returns transcript text.
     """
     url = f"{WHISPER_BASE_URL}/v1/audio/transcriptions"
-    headers = {}
+    headers: dict[str, str] = {}
     if WHISPER_API_KEY:
         headers["Authorization"] = f"Bearer {WHISPER_API_KEY}"
 
@@ -55,13 +58,26 @@ def transcribe_with_whisper_server(wav_path):
     try:
         with open(wav_path, "rb") as audio_file:
             files = {"file": (os.path.basename(wav_path), audio_file, "audio/wav")}
-            response = requests.post(url, data=payload, files=files, headers=headers, timeout=WHISPER_TIMEOUT)
+            response = requests.post(
+                url,
+                data=payload,
+                files=files,
+                headers=headers,
+                timeout=WHISPER_TIMEOUT,
+            )
 
         response.raise_for_status()
-        data = response.json()
+        data = string_key_dict(response.json())
+        if not data:
+            print(f"Whisper server returned invalid JSON: {data!r}")
+            return None
+
         text = data.get("text")
         if not text:
             print(f"Whisper server response missing 'text': {data}")
+            return None
+        if not isinstance(text, str):
+            print(f"Whisper server returned a non-string transcript: {data}")
             return None
         return text
     except requests.exceptions.ConnectionError:
@@ -75,13 +91,13 @@ def transcribe_with_whisper_server(wav_path):
         return None
 
 
-def transcribe(audio_path):
+def transcribe(audio_path: str) -> str | None:
     """
     Transcribes the given audio file using a Whisper server API.
     """
     if not os.path.exists(audio_path):
         print(f"File not found: {audio_path}")
-        return
+        return None
 
     # Determine relative path to maintain structure
     try:

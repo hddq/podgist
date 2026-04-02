@@ -1,7 +1,10 @@
-from datetime import datetime
-import requests
-import xml.etree.ElementTree as ET
 import re
+import xml.etree.ElementTree as ET
+from datetime import datetime
+
+import requests
+
+from models import TimestampValue
 
 def estimate_tokens(text: str) -> int:
     return len(text) // 4
@@ -15,8 +18,8 @@ def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int
     if not sentences:
         return []
 
-    chunks = []
-    current_sentences = []
+    chunks: list[str] = []
+    current_sentences: list[str] = []
 
     for sentence in sentences:
         sentence_tokens = estimate_tokens(sentence)
@@ -35,7 +38,9 @@ def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int
 
         chunks.append(" ".join(current_sentences))
 
-        overlap = current_sentences[-overlap_sentences:] if overlap_sentences > 0 else []
+        overlap: list[str] = (
+            current_sentences[-overlap_sentences:] if overlap_sentences > 0 else []
+        )
         while overlap and estimate_tokens(" ".join(overlap + [sentence])) > chunk_tokens:
             overlap = overlap[1:]
 
@@ -51,7 +56,7 @@ def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int
 
     return chunks
 
-def sanitize_filename(name):
+def sanitize_filename(name: str | None) -> str:
     """
     Sanitizes a string to be safe for filenames.
     """
@@ -61,17 +66,21 @@ def sanitize_filename(name):
     safe = "".join([c for c in name if c.isalnum() or c in (' ', '.', '_', '-')]).strip()
     return safe if safe else "unknown"
 
-def get_podcast_metadata(podcast_url, episode_url):
+def get_podcast_metadata(
+    podcast_url: str | None,
+    episode_url: str | None,
+) -> tuple[str | None, str | None]:
     """
     Fetches the RSS feed at podcast_url and tries to find the title
     and the episode title for the given episode_url.
     Returns (podcast_title, episode_title).
     """
+    if not podcast_url or not episode_url:
+        return None, None
+
     try:
         # Some feeds might require a User-Agent
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (PodGist/1.0)'
-        }
+        headers = {"User-Agent": "Mozilla/5.0 (PodGist/1.0)"}
         resp = requests.get(podcast_url, headers=headers, timeout=30)
         resp.raise_for_status()
         
@@ -80,12 +89,12 @@ def get_podcast_metadata(podcast_url, episode_url):
         root = ET.fromstring(resp.content)
         
         # Handle cases where root is rss/channel or just channel
-        channel = root.find('channel')
+        channel = root.find("channel")
         if channel is None:
             # Maybe the root IS the channel (Atom? or just weird RSS)
             # Standard RSS is <rss><channel>...</channel></rss>
             # Check if root tag is channel?
-            if root.tag == 'channel':
+            if root.tag == "channel":
                 channel = root
             else:
                 # Fallback, maybe look for title in root (Atom)
@@ -94,7 +103,7 @@ def get_podcast_metadata(podcast_url, episode_url):
 
         podcast_title = "Unknown Podcast"
         if channel is not None:
-            t = channel.findtext('title')
+            t = channel.findtext("title")
             if t:
                 podcast_title = t
 
@@ -102,27 +111,27 @@ def get_podcast_metadata(podcast_url, episode_url):
         
         # Iterate items to find episode
         # Support both 'item' (RSS) and 'entry' (Atom - though structure differs)
-        items = channel.findall('item') if channel is not None else []
+        items = channel.findall("item") if channel is not None else []
         
         found = False
         for item in items:
             # Check enclosure url
-            enclosure = item.find('enclosure')
+            enclosure = item.find("enclosure")
             if enclosure is not None:
-                url = enclosure.get('url')
+                url = enclosure.get("url")
                 # Simple check: exact match or contained
                 # Often episode_url might have extra params
                 if url and (url == episode_url or episode_url in url or url in episode_url):
-                    episode_title = item.findtext('title')
+                    episode_title = item.findtext("title") or episode_title
                     found = True
                     break
             
             # Check guid
-            guid = item.findtext('guid')
+            guid = item.findtext("guid")
             if guid and guid == episode_url:
-                 episode_title = item.findtext('title')
-                 found = True
-                 break
+                episode_title = item.findtext("title") or episode_title
+                found = True
+                break
 
         if not found and channel is not None:
              # Try to see if we can match by just filename if urls are vastly different
@@ -135,19 +144,16 @@ def get_podcast_metadata(podcast_url, episode_url):
         print(f"Error fetching metadata for {podcast_url}: {e}")
         return None, None
 
-def parse_timestamp(ts):
+def parse_timestamp(ts: TimestampValue) -> datetime | None:
     if ts is None:
         return None
 
-    # UNIX timestamp (int or numeric string)
-    if isinstance(ts, (int, float)) or (isinstance(ts, str) and ts.isdigit()):
-        return datetime.fromtimestamp(int(ts))
-
-    # ISO 8601 string
     if isinstance(ts, str):
+        if ts.isdigit():
+            return datetime.fromtimestamp(int(ts))
         try:
             return datetime.fromisoformat(ts.replace("Z", "+00:00"))
         except ValueError:
             return None
 
-    return None
+    return datetime.fromtimestamp(int(ts))
