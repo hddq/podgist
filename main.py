@@ -79,8 +79,11 @@ def build_work_item(action):
             os.path.join(SUMMARY_DIR, relative_path + ".md")
             if relative_path else None
         ),
+        "download_ok": False,
+        "transcript_ready": False,
         "succeeded": False,
     }
+
 
 def cleanup_audio_file(filepath):
     if not filepath:
@@ -95,41 +98,127 @@ def cleanup_audio_file(filepath):
         print(f"Warning: failed to remove audio file {filepath}: {e}")
 
 
-def process_single_episode(action):
-    """
-    Processes one episode end to end.
-    Returns True on full success and False on any failure.
-    """
-    item = build_work_item(action)
+def chunk_items(items, chunk_size):
+    for index in range(0, len(items), chunk_size):
+        yield items[index:index + chunk_size]
 
+
+def prepare_work_item(item):
+    """
+    Applies early success shortcuts before batch phase processing.
+    """
     if not item["episode_url"]:
         print("⚠️ No episode URL found, skipping episode.")
+        item["succeeded"] = True
         return True
 
     if item["summary_path"] and os.path.exists(item["summary_path"]):
         print(f"Summary already exists: {item['summary_path']}")
+        item["succeeded"] = True
         return True
 
     if item["transcript_path"] and os.path.exists(item["transcript_path"]):
         print(f"Transcript already exists: {item['transcript_path']}")
-    else:
+        item["transcript_ready"] = True
+        return False
+
+    return False
+
+
+def process_episode_batch(batch_items, label):
+    print(f"\n📦 Processing batch {label} ({len(batch_items)} episode(s))")
+
+    for item in batch_items:
+        prepare_work_item(item)
+
+    print("⬇️  Phase 1: Download all")
+    for item in batch_items:
+        if item["succeeded"] or item["transcript_ready"]:
+            continue
+
         item["filepath"] = download_file(
             item["episode_url"],
             relative_path=item["relative_path"],
         )
-        if not item["filepath"]:
-            return False
+        item["download_ok"] = bool(item["filepath"])
+
+    print("📝 Phase 2: Transcribe all")
+    for item in batch_items:
+        if item["succeeded"] or item["transcript_ready"]:
+            continue
+        if not item["download_ok"]:
+            continue
 
         item["transcript_path"] = transcribe(item["filepath"])
-        if not item["transcript_path"]:
-            return False
+        item["transcript_ready"] = bool(item["transcript_path"])
 
-    item["summary_path"] = summarize(item["transcript_path"])
-    if not item["summary_path"]:
-        return False
+    print("🧠 Phase 3: Summarize all")
+    for item in batch_items:
+        if item["succeeded"]:
+            continue
+        if not item["transcript_ready"]:
+            continue
 
-    cleanup_audio_file(item.get("filepath"))
-    return True
+        item["summary_path"] = summarize(item["transcript_path"])
+        if item["summary_path"]:
+            item["succeeded"] = True
+            cleanup_audio_file(item.get("filepath"))
+
+    return batch_items
+
+
+def deduplicate_actions(actions):
+    deduped = []
+    by_episode_url = {}
+
+    for action in actions:
+        episode_url = action.get("episode")
+        if not episode_url:
+            deduped.append(action)
+            continue
+
+        parsed_ts = parse_timestamp(action.get("timestamp"))
+        timestamp_value = int(parsed_ts.timestamp()) if parsed_ts else float("-inf")
+        existing_index = by_episode_url.get(episode_url)
+
+        if existing_index is None:
+            by_episode_url[episode_url] = len(deduped)
+            deduped.append(action)
+            continue
+
+        existing_action = deduped[existing_index]
+        existing_ts = parse_timestamp(existing_action.get("timestamp"))
+        existing_value = int(existing_ts.timestamp()) if existing_ts else float("-inf")
+        if timestamp_value >= existing_value:
+            deduped[existing_index] = action
+
+    return deduped
+
+
+def process_batched_work_items(work_items, batch_size, batch_label_prefix):
+    succeeded_count = 0
+    failed_count = 0
+    dead_count = 0
+
+    for batch_index, batch_items in enumerate(chunk_items(work_items, batch_size), start=1):
+        process_episode_batch(batch_items, f"{batch_label_prefix}{batch_index}")
+
+        for item in batch_items:
+            episode_url = item.get("episode_url")
+            if item["succeeded"]:
+                if episode_url:
+                    mark_succeeded(episode_url)
+                succeeded_count += 1
+                continue
+
+            moved_to_dead = mark_failed(episode_url, item["action"])
+            if moved_to_dead:
+                dead_count += 1
+            else:
+                failed_count += 1
+
+    return succeeded_count, failed_count, dead_count
+
 
 def process_actions(since_ts):
     """
@@ -145,21 +234,27 @@ def process_actions(since_ts):
 
     if failed_queue:
         print("\n🔁 Retrying failed episodes...")
+    retry_actions = [
+        failed_entry.get("action") or {}
+        for failed_entry in failed_queue.values()
+    ]
+    retry_actions.sort(key=lambda a: parse_timestamp(a.get("timestamp")) or datetime.min)
+    checkpoint_batch_size = PIPELINE_BATCH_SIZE if PIPELINE_BATCH_SIZE > 0 else 1
+    print(
+        f"ℹ️ Processing episodes in staged batches "
+        f"(batch size: {checkpoint_batch_size})."
+    )
 
-    for episode_url, failed_entry in failed_queue.items():
-        action = failed_entry.get("action") or {}
-        print(f"\n🔁 Retrying failed episode: {episode_url}")
-        if process_single_episode(action):
-            mark_succeeded(episode_url)
-            succeeded_count += 1
-            print(f"✅ Retry succeeded: {episode_url}")
-        else:
-            moved_to_dead = mark_failed(episode_url, action)
-            if moved_to_dead:
-                dead_count += 1
-            else:
-                failed_count += 1
-            print(f"❌ Retry failed: {episode_url}")
+    if retry_actions:
+        retry_work_items = [build_work_item(action) for action in retry_actions]
+        retry_succeeded, retry_failed, retry_dead = process_batched_work_items(
+            retry_work_items,
+            checkpoint_batch_size,
+            "retry ",
+        )
+        succeeded_count += retry_succeeded
+        failed_count += retry_failed
+        dead_count += retry_dead
 
     try:
         data = fetch_episode_actions(since=since_ts)
@@ -186,39 +281,36 @@ def process_actions(since_ts):
 
     # sort safely using parsed timestamp
     plays.sort(key=lambda a: parse_timestamp(a.get("timestamp")) or datetime.min)
+    deduped_plays = deduplicate_actions(plays)
 
-    print(f"\n🎧 New played episodes: {len(plays)}\n")
+    print(f"\n🎧 New played episodes: {len(plays)}")
+    if len(deduped_plays) != len(plays):
+        print(f"🧹 Collapsed to unique episodes this poll: {len(deduped_plays)}")
+    else:
+        print()
 
-    checkpoint_batch_size = PIPELINE_BATCH_SIZE if PIPELINE_BATCH_SIZE > 0 else 1
-    print(
-        f"ℹ️ Processing episodes sequentially "
-        f"(checkpoint save cadence: every {checkpoint_batch_size} episode(s))."
-    )
-
+    new_work_items = [build_work_item(action) for action in deduped_plays]
     new_since = since_ts
-    processed_count = 0
-    for action in plays:
-        episode_url = action.get("episode")
-        if process_single_episode(action):
-            if episode_url:
-                mark_succeeded(episode_url)
-            succeeded_count += 1
-        else:
-            moved_to_dead = mark_failed(episode_url, action)
-            if moved_to_dead:
-                dead_count += 1
+    for batch_index, batch_items in enumerate(chunk_items(new_work_items, checkpoint_batch_size), start=1):
+        process_episode_batch(batch_items, str(batch_index))
+
+        for item in batch_items:
+            episode_url = item.get("episode_url")
+            if item["succeeded"]:
+                if episode_url:
+                    mark_succeeded(episode_url)
+                succeeded_count += 1
             else:
-                failed_count += 1
+                moved_to_dead = mark_failed(episode_url, item["action"])
+                if moved_to_dead:
+                    dead_count += 1
+                else:
+                    failed_count += 1
 
-        parsed_ts = parse_timestamp(action.get("timestamp"))
-        if parsed_ts is not None:
-            timestamp_value = int(parsed_ts.timestamp())
-            if timestamp_value > new_since:
-                new_since = timestamp_value
+            if item["timestamp_value"] is not None and item["timestamp_value"] > new_since:
+                new_since = item["timestamp_value"]
 
-        processed_count += 1
-        if processed_count % checkpoint_batch_size == 0:
-            save_last_timestamp(new_since)
+        save_last_timestamp(new_since)
 
     save_last_timestamp(new_since)
     print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
