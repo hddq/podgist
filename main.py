@@ -7,7 +7,13 @@ from utils import parse_timestamp, get_podcast_metadata, sanitize_filename
 from downloader import download_file
 from transcriber import transcribe
 from summarizer import summarize
-from state_manager import load_last_timestamp, save_last_timestamp
+from state_manager import (
+    load_failed,
+    load_last_timestamp,
+    mark_failed,
+    mark_succeeded,
+    save_last_timestamp,
+)
 from config import PIPELINE_BATCH_SIZE, TRANSCRIPT_DIR, SUMMARY_DIR
 import os
 import tomllib
@@ -76,35 +82,90 @@ def build_work_item(action):
         "succeeded": False,
     }
 
+def cleanup_audio_file(filepath):
+    if not filepath:
+        return
 
-def chunk_items(items, chunk_size):
-    for index in range(0, len(items), chunk_size):
-        yield items[index:index + chunk_size]
+    try:
+        os.remove(filepath)
+        print(f"🧹 Removed audio file: {filepath}")
+    except FileNotFoundError:
+        return
+    except OSError as e:
+        print(f"Warning: failed to remove audio file {filepath}: {e}")
 
 
-def cleanup_batch_audio(batch_items):
-    for item in batch_items:
-        filepath = item.get("filepath")
-        if not filepath:
-            continue
+def process_single_episode(action):
+    """
+    Processes one episode end to end.
+    Returns True on full success and False on any failure.
+    """
+    item = build_work_item(action)
 
-        try:
-            os.remove(filepath)
-            print(f"🧹 Removed audio file: {filepath}")
-        except FileNotFoundError:
-            continue
-        except OSError as e:
-            print(f"Warning: failed to remove audio file {filepath}: {e}")
+    if not item["episode_url"]:
+        print("⚠️ No episode URL found, skipping episode.")
+        return True
+
+    if item["summary_path"] and os.path.exists(item["summary_path"]):
+        print(f"Summary already exists: {item['summary_path']}")
+        return True
+
+    if item["transcript_path"] and os.path.exists(item["transcript_path"]):
+        print(f"Transcript already exists: {item['transcript_path']}")
+    else:
+        item["filepath"] = download_file(
+            item["episode_url"],
+            relative_path=item["relative_path"],
+        )
+        if not item["filepath"]:
+            return False
+
+        item["transcript_path"] = transcribe(item["filepath"])
+        if not item["transcript_path"]:
+            return False
+
+    item["summary_path"] = summarize(item["transcript_path"])
+    if not item["summary_path"]:
+        return False
+
+    cleanup_audio_file(item.get("filepath"))
+    return True
 
 def process_actions(since_ts):
     """
     Fetches and processes actions since the given timestamp.
-    Returns the updated timestamp after processing successful batches.
+    Returns the updated timestamp after processing all fetched actions.
     """
+    succeeded_count = 0
+    failed_count = 0
+    dead_count = 0
+
+    failed_queue = load_failed()
+    print(f"📬 Failed queue at poll start: {len(failed_queue)} episode(s)")
+
+    if failed_queue:
+        print("\n🔁 Retrying failed episodes...")
+
+    for episode_url, failed_entry in failed_queue.items():
+        action = failed_entry.get("action") or {}
+        print(f"\n🔁 Retrying failed episode: {episode_url}")
+        if process_single_episode(action):
+            mark_succeeded(episode_url)
+            succeeded_count += 1
+            print(f"✅ Retry succeeded: {episode_url}")
+        else:
+            moved_to_dead = mark_failed(episode_url, action)
+            if moved_to_dead:
+                dead_count += 1
+            else:
+                failed_count += 1
+            print(f"❌ Retry failed: {episode_url}")
+
     try:
         data = fetch_episode_actions(since=since_ts)
     except Exception as e:
         print(f"Failed to fetch actions: {e}")
+        print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
         return since_ts
 
     actions = data.get("actions", [])
@@ -119,6 +180,8 @@ def process_actions(since_ts):
     
     if not plays:
         print("No new 'play' actions found.")
+        save_last_timestamp(since_ts)
+        print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
         return since_ts
 
     # sort safely using parsed timestamp
@@ -126,78 +189,32 @@ def process_actions(since_ts):
 
     print(f"\n🎧 New played episodes: {len(plays)}\n")
 
-    batch_size = PIPELINE_BATCH_SIZE if PIPELINE_BATCH_SIZE > 0 else 1
-    current_since = since_ts
-    for batch_index, batch_actions in enumerate(chunk_items(plays, batch_size), start=1):
-        batch_items = [build_work_item(action) for action in batch_actions]
-        batch_failed = False
-        print(f"\n📦 Processing batch {batch_index} ({len(batch_items)} episode(s))")
+    if PIPELINE_BATCH_SIZE > 0:
+        print(f"ℹ️ Processing episodes sequentially (configured batch_size={PIPELINE_BATCH_SIZE}).")
 
-        print("⬇️  Phase 1: Download all")
-        for item in batch_items:
-            if not item["episode_url"]:
-                print("⚠️ No episode URL found, skipping download.")
-                item["succeeded"] = True
-                continue
-            if item["summary_path"] and os.path.exists(item["summary_path"]):
-                print(f"Summary already exists: {item['summary_path']}")
-                item["succeeded"] = True
-                continue
-            if item["transcript_path"] and os.path.exists(item["transcript_path"]):
-                print(f"Transcript already exists: {item['transcript_path']}")
-                continue
-
-            item["filepath"] = download_file(
-                item["episode_url"],
-                relative_path=item["relative_path"],
-            )
-            if not item["filepath"]:
-                batch_failed = True
-
-        print("📝 Phase 2: Transcribe all")
-        for item in batch_items:
-            if item["succeeded"]:
-                continue
-            if item["transcript_path"] and os.path.exists(item["transcript_path"]):
-                continue
-            if not item["filepath"]:
-                batch_failed = True
-                continue
-
-            item["transcript_path"] = transcribe(item["filepath"])
-            if not item["transcript_path"]:
-                batch_failed = True
-
-        print("🧠 Phase 3: Summarize all")
-        for item in batch_items:
-            if item["succeeded"]:
-                continue
-            if item["summary_path"] and os.path.exists(item["summary_path"]):
-                item["succeeded"] = True
-                continue
-            if not item["transcript_path"]:
-                batch_failed = True
-                continue
-
-            item["summary_path"] = summarize(item["transcript_path"])
-            if item["summary_path"]:
-                item["succeeded"] = True
+    new_since = since_ts
+    for action in plays:
+        episode_url = action.get("episode")
+        if process_single_episode(action):
+            if episode_url:
+                mark_succeeded(episode_url)
+            succeeded_count += 1
+        else:
+            moved_to_dead = mark_failed(episode_url, action)
+            if moved_to_dead:
+                dead_count += 1
             else:
-                batch_failed = True
+                failed_count += 1
 
-        if batch_failed or not all(item["succeeded"] for item in batch_items):
-            print("⚠️ Batch failed; checkpoint will not advance and later batches will not run.")
-            break
+        parsed_ts = parse_timestamp(action.get("timestamp"))
+        if parsed_ts is not None:
+            timestamp_value = int(parsed_ts.timestamp())
+            if timestamp_value > new_since:
+                new_since = timestamp_value
 
-        last_timestamp = batch_items[-1].get("timestamp_value")
-        if last_timestamp is not None and last_timestamp > current_since:
-            current_since = last_timestamp
-            save_last_timestamp(current_since)
-
-        if all(item["succeeded"] for item in batch_items):
-            cleanup_batch_audio(batch_items)
-
-    return current_since
+    save_last_timestamp(new_since)
+    print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
+    return new_since
 
 def main():
     print(f"🚀 Starting PodGist v{get_app_version()} Loop...")
