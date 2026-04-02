@@ -189,10 +189,14 @@ def process_actions(since_ts):
 
     print(f"\n🎧 New played episodes: {len(plays)}\n")
 
-    if PIPELINE_BATCH_SIZE > 0:
-        print(f"ℹ️ Processing episodes sequentially (configured batch_size={PIPELINE_BATCH_SIZE}).")
+    checkpoint_batch_size = PIPELINE_BATCH_SIZE if PIPELINE_BATCH_SIZE > 0 else 1
+    print(
+        f"ℹ️ Processing episodes sequentially "
+        f"(checkpoint save cadence: every {checkpoint_batch_size} episode(s))."
+    )
 
     new_since = since_ts
+    processed_count = 0
     for action in plays:
         episode_url = action.get("episode")
         if process_single_episode(action):
@@ -211,6 +215,10 @@ def process_actions(since_ts):
             timestamp_value = int(parsed_ts.timestamp())
             if timestamp_value > new_since:
                 new_since = timestamp_value
+
+        processed_count += 1
+        if processed_count % checkpoint_batch_size == 0:
+            save_last_timestamp(new_since)
 
     save_last_timestamp(new_since)
     print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
