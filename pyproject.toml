@@ -12,7 +12,7 @@ dependencies = [
   "google-genai==1.69.0",
   "PyYAML==6.0.3",
   "python-dotenv==1.2.2",
-  "requests==2.33.0",
+  "requests==2.33.1",
 ]
 
 [project.scripts]
