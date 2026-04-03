@@ -1,5 +1,6 @@
 import os
 import subprocess
+from urllib.parse import urlsplit
 
 from openai import APIConnectionError, APITimeoutError, OpenAI
 
@@ -15,10 +16,16 @@ from config import (
 )
 
 
+def _normalize_openai_base_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    parsed = urlsplit(normalized)
+    if not parsed.path:
+        return f"{normalized}/v1"
+    return normalized
+
+
 def _make_whisper_client() -> OpenAI:
-    base_url = WHISPER_BASE_URL.rstrip("/")
-    if not base_url.endswith("/v1"):
-        base_url += "/v1"
+    base_url = _normalize_openai_base_url(WHISPER_BASE_URL)
     return OpenAI(base_url=base_url, api_key=WHISPER_API_KEY or "not-needed", timeout=WHISPER_TIMEOUT)
 
 
@@ -58,12 +65,14 @@ def transcribe_with_whisper_server(wav_path: str) -> str | None:
     """
     try:
         client = _make_whisper_client()
-        kwargs: dict[str, object] = {"model": WHISPER_MODEL, "file": open(wav_path, "rb")}
-        if WHISPER_LANGUAGE:
-            kwargs["language"] = WHISPER_LANGUAGE
-        if WHISPER_PROMPT:
-            kwargs["prompt"] = WHISPER_PROMPT
-        transcript = client.audio.transcriptions.create(**kwargs)  # type: ignore[arg-type]
+        with open(wav_path, "rb") as audio_file:
+            kwargs: dict[str, object] = {"model": WHISPER_MODEL, "file": audio_file}
+            language = WHISPER_LANGUAGE.strip().lower()
+            if language and language != "auto":
+                kwargs["language"] = WHISPER_LANGUAGE
+            if WHISPER_PROMPT:
+                kwargs["prompt"] = WHISPER_PROMPT
+            transcript = client.audio.transcriptions.create(**kwargs)  # type: ignore[arg-type]
         text = getattr(transcript, "text", None)
         text = text if isinstance(text, str) else None
         if not text:

@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlsplit
 
 import requests
 from openai import APIConnectionError, APIStatusError, OpenAI
@@ -21,10 +22,16 @@ from config import (
 from utils import chunk_transcript, estimate_tokens
 
 
+def _normalize_openai_base_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    parsed = urlsplit(normalized)
+    if not parsed.path:
+        return f"{normalized}/v1"
+    return normalized
+
+
 def _make_llm_client() -> OpenAI:
-    base_url = LLM_BASE_URL.rstrip("/")
-    if not base_url.endswith("/v1"):
-        base_url += "/v1"
+    base_url = _normalize_openai_base_url(LLM_BASE_URL)
     return OpenAI(base_url=base_url, api_key=LLM_API_KEY or "not-needed", timeout=LLM_TIMEOUT)
 
 
