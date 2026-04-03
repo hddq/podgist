@@ -29,6 +29,7 @@ llm:
   # Works with OpenAI, Ollama, vLLM, llama.cpp, Gemini (via OpenAI compat endpoint), etc.
   base_url: "http://localhost:11434"
   model: "llama3"
+  # API key should be provided via .env as LLM_API_KEY when required.
   # HTTP timeout in seconds for LLM requests
   timeout: 300
   # Set to true to automatically pull missing models via Ollama's /api/pull endpoint
@@ -44,6 +45,7 @@ whisper:
   base_url: "http://localhost:8000"
   # Whisper model to use (e.g. "base", "small", "medium", "large-v3")
   model: "medium"
+  # Credentials are loaded from .env via WHISPER_API_KEY when required.
   # Optional language hint passed to the Whisper API
   language: ""
   # Optional prompt passed to the Whisper API
