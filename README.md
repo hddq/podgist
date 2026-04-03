@@ -88,7 +88,7 @@ Get up and running without installing Python or building code.
 
 4.  **Run**:
     ```bash
-    python3 main.py
+    python3 src/main.py
     ```
 
 ## 📝 Customizing the Summary

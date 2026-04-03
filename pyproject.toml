@@ -25,6 +25,7 @@ dev = [
 podgist = "main:main"
 
 [tool.setuptools]
+package-dir = {"" = "src"}
 py-modules = [
   "config",
   "downloader",
@@ -43,6 +44,6 @@ py-modules = [
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
 include = [
-  "*.py",
+  "src/**/*.py",
 ]
 reportMissingTypeStubs = "none"
