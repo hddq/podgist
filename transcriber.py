@@ -1,5 +1,6 @@
 import os
 import subprocess
+from typing import cast
 from urllib.parse import urlsplit
 
 from openai import APIConnectionError, APITimeoutError, OpenAI
@@ -72,20 +73,20 @@ def transcribe_with_whisper_server(wav_path: str) -> str | None:
                 kwargs["language"] = WHISPER_LANGUAGE
             if WHISPER_PROMPT:
                 kwargs["prompt"] = WHISPER_PROMPT
-            transcript = client.audio.transcriptions.create(**kwargs)  # type: ignore[arg-type]
+            transcript = cast(object, client.audio.transcriptions.create(**kwargs))  # type: ignore[arg-type]
         text = getattr(transcript, "text", None)
         text = text if isinstance(text, str) else None
         if not text:
             print("Whisper server response missing 'text'.")
             return None
         return text
+    except APITimeoutError:
+        print(f"Whisper server request timed out after {WHISPER_TIMEOUT}s.")
+        return None
     except APIConnectionError:
         print(
             f"Failed to connect to Whisper server at {WHISPER_BASE_URL}. Is it running?"
         )
-        return None
-    except APITimeoutError:
-        print(f"Whisper server request timed out after {WHISPER_TIMEOUT}s.")
         return None
     except Exception as e:
         print(f"Whisper transcription failed: {e}")
