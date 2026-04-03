@@ -1,10 +1,10 @@
-FROM python:3.14-slim
+FROM docker.io/library/python:3.14-alpine
 WORKDIR /app
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk upgrade --no-cache && \
+    apk add --no-cache ffmpeg
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir .
 COPY . .
 RUN mkdir -p data/downloads data/transcripts data/summaries
 CMD ["python", "main.py"]
