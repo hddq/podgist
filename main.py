@@ -26,11 +26,10 @@ def process_actions(since_ts: int) -> int:
 
     if failed_queue:
         print("\n🔁 Retrying failed episodes...")
-    retry_actions = [
-        failed_entry["action"]
-        for failed_entry in failed_queue.values()
-    ]
-    retry_actions.sort(key=lambda a: parse_timestamp(a.get("timestamp")) or datetime.min)
+    retry_actions = [failed_entry["action"] for failed_entry in failed_queue.values()]
+    retry_actions.sort(
+        key=lambda a: parse_timestamp(a.get("timestamp")) or datetime.min
+    )
     checkpoint_batch_size = PIPELINE_BATCH_SIZE if PIPELINE_BATCH_SIZE > 0 else 1
     print(
         f"ℹ️ Processing episodes in staged batches "
@@ -53,13 +52,16 @@ def process_actions(since_ts: int) -> int:
         data = fetch_episode_actions(since=since_ts)
     except Exception as e:
         print(f"Failed to fetch actions: {e}")
-        print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
+        print(
+            f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead"
+        )
         return since_ts
 
     actions = data.get("actions", [])
     plays = [a for a in actions if a.get("action") == "play"]
     plays = [
-        a for a in plays
+        a
+        for a in plays
         if (
             (parsed_ts := parse_timestamp(a.get("timestamp"))) is None
             or int(parsed_ts.timestamp()) > since_ts
@@ -69,7 +71,9 @@ def process_actions(since_ts: int) -> int:
     if not plays:
         print("No new 'play' actions found.")
         save_last_timestamp(since_ts)
-        print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
+        print(
+            f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead"
+        )
         return since_ts
 
     # sort safely using parsed timestamp
@@ -94,7 +98,9 @@ def process_actions(since_ts: int) -> int:
     )
 
     save_last_timestamp(new_since)
-    print(f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead")
+    print(
+        f"\n✅ {succeeded_count} succeeded, ❌ {failed_count} failed, 💀 {dead_count} dead"
+    )
     return new_since
 
 

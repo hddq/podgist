@@ -68,7 +68,7 @@ def _load_state() -> StateData:
     try:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             data = string_key_dict(cast(object, json.load(f)))
-    except (json.JSONDecodeError, IOError):
+    except json.JSONDecodeError, IOError:
         print(f"Warning: Could not read {STATE_FILE}. Using default state.")
         return _default_state()
 

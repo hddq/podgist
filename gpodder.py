@@ -20,7 +20,9 @@ def fetch_episode_actions(since: int | None = None) -> EpisodeActionsResponse:
     url = f"{GPODDER_BASE_URL}/api/2/episodes/{username}.json"
     params = {"since": timestamp}
 
-    response = requests.get(url, auth=(username, password or ""), params=params, timeout=30)
+    response = requests.get(
+        url, auth=(username, password or ""), params=params, timeout=30
+    )
     response.raise_for_status()
 
     payload = string_key_dict(response.json())

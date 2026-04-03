@@ -37,7 +37,9 @@ def build_work_item(action: EpisodeAction) -> WorkItem:
         safe_podcast = sanitize_filename(podcast_title)
         safe_episode = sanitize_filename(episode_title)
 
-        if not safe_episode.lower().endswith(".mp3") and not safe_episode.lower().endswith(".m4a"):
+        if not safe_episode.lower().endswith(
+            ".mp3"
+        ) and not safe_episode.lower().endswith(".m4a"):
             safe_episode += ".mp3"
 
         relative_path = os.path.join(safe_podcast, safe_episode)
@@ -55,9 +57,7 @@ def build_work_item(action: EpisodeAction) -> WorkItem:
             else None
         ),
         summary_path=(
-            os.path.join(SUMMARY_DIR, relative_path + ".md")
-            if relative_path
-            else None
+            os.path.join(SUMMARY_DIR, relative_path + ".md") if relative_path else None
         ),
     )
 
@@ -77,7 +77,7 @@ def cleanup_audio_file(filepath: str | None) -> None:
 
 def chunk_items[T](items: list[T], chunk_size: int) -> Iterator[list[T]]:
     for index in range(0, len(items), chunk_size):
-        yield items[index:index + chunk_size]
+        yield items[index : index + chunk_size]
 
 
 def prepare_work_item(item: WorkItem) -> bool:
@@ -182,7 +182,9 @@ def process_batched_work_items(
     failed_count = 0
     dead_count = 0
 
-    for batch_index, batch_items in enumerate(chunk_items(work_items, batch_size), start=1):
+    for batch_index, batch_items in enumerate(
+        chunk_items(work_items, batch_size), start=1
+    ):
         process_episode_batch(batch_items, f"{batch_label_prefix}{batch_index}")
 
         for item in batch_items:
@@ -214,7 +216,9 @@ def process_action_batches(
 ) -> tuple[int, int, int, int]:
     new_since = initial_since
 
-    for batch_index, action_batch in enumerate(chunk_items(actions, batch_size), start=1):
+    for batch_index, action_batch in enumerate(
+        chunk_items(actions, batch_size), start=1
+    ):
         batch_items = [build_work_item(action) for action in action_batch]
         process_episode_batch(batch_items, f"{batch_label_prefix}{batch_index}")
 

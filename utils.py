@@ -12,11 +12,15 @@ from models import TimestampValue
 def estimate_tokens(text: str) -> int:
     return len(text) // 4
 
+
 def split_into_sentences(text: str) -> list[str]:
-    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     return [sentence for sentence in sentences if sentence.strip()]
 
-def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int = 3) -> list[str]:
+
+def chunk_transcript(
+    text: str, chunk_tokens: int = 3000, overlap_sentences: int = 3
+) -> list[str]:
     sentences = split_into_sentences(text)
     if not sentences:
         return []
@@ -46,7 +50,9 @@ def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int
 
         chunks.append(" ".join(current_sentences))
 
-        overlap_sentence_data = list(zip(current_sentences, current_token_counts, strict=False))
+        overlap_sentence_data = list(
+            zip(current_sentences, current_token_counts, strict=False)
+        )
         overlap: list[tuple[str, int]] = (
             overlap_sentence_data[-overlap_sentences:] if overlap_sentences > 0 else []
         )
@@ -63,13 +69,16 @@ def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int
             continue
 
         current_sentences = [sentence_text for sentence_text, _ in overlap] + [sentence]
-        current_token_counts = [token_count for _, token_count in overlap] + [sentence_tokens]
+        current_token_counts = [token_count for _, token_count in overlap] + [
+            sentence_tokens
+        ]
         current_token_total = overlap_token_total + sentence_tokens
 
     if current_sentences:
         chunks.append(" ".join(current_sentences))
 
     return chunks
+
 
 def sanitize_filename(name: str | None) -> str:
     """
@@ -78,7 +87,9 @@ def sanitize_filename(name: str | None) -> str:
     if not name:
         return "unknown"
     # Keep alphanumeric, spaces, dots, underscores, dashes
-    safe = "".join([c for c in name if c.isalnum() or c in (' ', '.', '_', '-')]).strip()
+    safe = "".join(
+        [c for c in name if c.isalnum() or c in (" ", ".", "_", "-")]
+    ).strip()
     return safe if safe else "unknown"
 
 
@@ -121,6 +132,7 @@ def _fetch_podcast_feed_index(
 
     return podcast_title, episode_titles
 
+
 def get_podcast_metadata(
     podcast_url: str | None,
     episode_url: str | None,
@@ -151,6 +163,7 @@ def get_podcast_metadata(
     except Exception as e:
         print(f"Error fetching metadata for {podcast_url}: {e}")
         return None, None
+
 
 def parse_timestamp(ts: TimestampValue) -> datetime | None:
     if ts is None:

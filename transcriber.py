@@ -27,7 +27,11 @@ def _normalize_openai_base_url(base_url: str) -> str:
 
 def _make_whisper_client() -> OpenAI:
     base_url = _normalize_openai_base_url(WHISPER_BASE_URL)
-    return OpenAI(base_url=base_url, api_key=WHISPER_API_KEY or "not-needed", timeout=WHISPER_TIMEOUT)
+    return OpenAI(
+        base_url=base_url,
+        api_key=WHISPER_API_KEY or "not-needed",
+        timeout=WHISPER_TIMEOUT,
+    )
 
 
 def convert_to_wav_16k(input_path: str) -> tuple[str | None, bool]:
@@ -43,17 +47,23 @@ def convert_to_wav_16k(input_path: str) -> tuple[str | None, bool]:
 
     cmd = [
         "ffmpeg",
-        "-y",             # overwrite
-        "-i", input_path,
-        "-ar", "16000",   # 16kHz sample rate
-        "-ac", "1",       # mono
-        "-c:a", "pcm_s16le",
-        output_path
+        "-y",  # overwrite
+        "-i",
+        input_path,
+        "-ar",
+        "16000",  # 16kHz sample rate
+        "-ac",
+        "1",  # mono
+        "-c:a",
+        "pcm_s16le",
+        output_path,
     ]
 
     # Run ffmpeg silently
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         return output_path, True
     except subprocess.CalledProcessError as e:
         print(f"FFmpeg conversion failed: {e}")

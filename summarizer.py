@@ -32,12 +32,16 @@ def _normalize_openai_base_url(base_url: str) -> str:
 
 def _make_llm_client() -> OpenAI:
     base_url = _normalize_openai_base_url(LLM_BASE_URL)
-    return OpenAI(base_url=base_url, api_key=LLM_API_KEY or "not-needed", timeout=LLM_TIMEOUT)
+    return OpenAI(
+        base_url=base_url, api_key=LLM_API_KEY or "not-needed", timeout=LLM_TIMEOUT
+    )
 
 
 def _pull_ollama_model() -> bool:
     pull_url = f"{LLM_BASE_URL.rstrip('/')}/api/pull"
-    response = requests.post(url=pull_url, json={"name": LLM_MODEL, "stream": False}, timeout=1800)
+    response = requests.post(
+        url=pull_url, json={"name": LLM_MODEL, "stream": False}, timeout=1800
+    )
     response.raise_for_status()
     return True
 
@@ -108,8 +112,7 @@ def _summarize_chunked(transcript_text: str) -> str | None:
 
     for chunk_index, chunk_text in enumerate(chunks, start=1):
         prompt = (
-            chunk_prompt_template
-            .replace("{transcript}", chunk_text)
+            chunk_prompt_template.replace("{transcript}", chunk_text)
             .replace("{chunk_index}", str(chunk_index))
             .replace("{total_chunks}", str(total_chunks))
         )
@@ -149,7 +152,7 @@ def summarize(transcript_path: str) -> str | None:
     # Remove .txt suffix if present
     if rel_path.endswith(".txt"):
         rel_path = rel_path[:-4]
-    
+
     output_filename = rel_path + ".md"
     output_path = os.path.join(SUMMARY_DIR, output_filename)
 

@@ -22,14 +22,20 @@ def download_file(
             # Basic cleanup of query parameters if present
             if "?" in filename:
                 filename = filename.split("?")[0]
-        
+
         # Ensure filename is safe (basic)
-        filename = "".join([c for c in filename if c.isalpha() or c.isdigit() or c in (' ', '.', '_', '-')]).strip()
+        filename = "".join(
+            [
+                c
+                for c in filename
+                if c.isalpha() or c.isdigit() or c in (" ", ".", "_", "-")
+            ]
+        ).strip()
         if not filename:
             filename = "unknown_episode.mp3"
 
         filepath = os.path.join(DOWNLOAD_DIR, filename)
-    
+
     # Ensure directory exists
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
 

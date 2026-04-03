@@ -70,12 +70,14 @@ def load_yaml_config() -> YamlMapping:
         return {}
     return string_key_dict(cast(object, loaded))
 
+
 _yaml_conf = load_yaml_config()
+
 
 def get_config(key_path: str, default: object | None = None) -> object | None:
     """
     Retrieves a configuration value from the loaded YAML configuration.
-    
+
     Args:
         key_path (str): Dot-notation path to the key (e.g. "section.subsection.key")
         default: Value to return if key is not found
@@ -96,6 +98,7 @@ def get_config(key_path: str, default: object | None = None) -> object | None:
         return value
 
     return default
+
 
 def get_config_int(key_path: str, default: int) -> int:
     value = get_config(key_path, default)
@@ -120,7 +123,9 @@ def get_config_str(key_path: str, default: str) -> str:
     return default
 
 
-def get_config_mapping(key_path: str, default: dict[str, object] | None = None) -> dict[str, object]:
+def get_config_mapping(
+    key_path: str, default: dict[str, object] | None = None
+) -> dict[str, object]:
     value = get_config(key_path, default or {})
     mapping = string_key_dict(value)
     return mapping if mapping else (default.copy() if default is not None else {})
@@ -142,6 +147,7 @@ def get_config_bool(key_path: str, default: bool = False) -> bool:
         if normalized in {"false", "0", "no", "off"}:
             return False
     return bool(default)
+
 
 # --- Secrets (From Environment Only) ---
 GPODDER_USERNAME: str | None = os.getenv("GPODDER_USERNAME")
@@ -168,8 +174,12 @@ TRANSCRIPT_DIR: str = get_config_str("paths.transcripts", "data/transcripts")
 SUMMARY_DIR: str = get_config_str("paths.summaries", "data/summaries")
 STATE_FILE: str = get_config_str("paths.state_file", "data/state.json")
 PROMPT_FILE: str = get_config_str("paths.prompt_file", str(PROMPT_FILE_DEFAULT))
-CHUNK_PROMPT_FILE: str = get_config_str("paths.prompt_chunk_file", "config/prompt_chunk.md")
-FINAL_PROMPT_FILE: str = get_config_str("paths.prompt_final_file", "config/prompt_final.md")
+CHUNK_PROMPT_FILE: str = get_config_str(
+    "paths.prompt_chunk_file", "config/prompt_chunk.md"
+)
+FINAL_PROMPT_FILE: str = get_config_str(
+    "paths.prompt_final_file", "config/prompt_final.md"
+)
 
 # LLM Configuration
 LLM_BASE_URL: str = get_config_str("llm.base_url", "").rstrip("/")
@@ -179,7 +189,9 @@ LLM_EXTRA_BODY: dict[str, object] = get_config_mapping("llm.extra_body")
 LLM_AUTO_PULL: bool = get_config_bool("llm.auto_pull", False)
 
 # Whisper Configuration
-WHISPER_BASE_URL: str = get_config_str("whisper.base_url", "http://localhost:8000").rstrip("/")
+WHISPER_BASE_URL: str = get_config_str(
+    "whisper.base_url", "http://localhost:8000"
+).rstrip("/")
 WHISPER_MODEL: str = get_config_str("whisper.model", "base")
 WHISPER_TIMEOUT: int = get_config_int("whisper.timeout", 600)
 WHISPER_LANGUAGE: str = get_config_str("whisper.language", "")
