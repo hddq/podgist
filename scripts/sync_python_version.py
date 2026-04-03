@@ -56,7 +56,9 @@ def main() -> int:
         "Synchronized Python version "
         f"{version} (.python-version / pyproject.toml / Dockerfile / README.md / flake.nix)"
     )
-    print(f"Nix dev shell will resolve package attribute python{version_digits} dynamically.")
+    print(
+        f"Nix dev shell will resolve package attribute python{version_digits} dynamically."
+    )
     return 0
 
 
