@@ -25,25 +25,28 @@ paths:
   prompt_final_file: "config/prompt_final.md"
 
 llm:
-  # LLM Provider to use. Options: "gemini", "ollama"
-  provider: "gemini"
-  
-  gemini:
-    model: "gemini-3-flash-preview"
-    # API key is loaded from .env (GEMINI_API_KEY)
-  
-  ollama:
-    base_url: "http://localhost:11434"
-    model: "llama3"
-    # Automatically pull the model when Ollama reports it as missing
-    auto_pull: true
-    num_ctx: 16384
+  # Base URL of any OpenAI-compatible API.
+  # Works with OpenAI, Ollama, vLLM, llama.cpp, Gemini (via OpenAI compat endpoint), etc.
+  base_url: "http://localhost:11434"
+  model: "llama3"
+  # HTTP timeout in seconds for LLM requests
+  timeout: 300
+  # Set to true to automatically pull missing models via Ollama's /api/pull endpoint
+  auto_pull: true
+  # Extra JSON fields merged into /v1/chat/completions requests.
+  # Useful for backend-specific settings like context length.
+  extra_body:
+    options:
+      num_ctx: 16384
 
 whisper:
   # Base URL of your OpenAI-compatible Whisper server
   base_url: "http://localhost:8000"
   # Whisper model to use (e.g. "base", "small", "medium", "large-v3")
   model: "medium"
+  # Optional language hint passed to the Whisper API
+  language: ""
+  # Optional prompt passed to the Whisper API
+  prompt: ""
   # HTTP timeout in seconds for transcription requests
   timeout: 600
-  # Optional auth token should be provided via .env as WHISPER_API_KEY

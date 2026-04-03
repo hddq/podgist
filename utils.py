@@ -7,6 +7,8 @@ import requests
 
 from models import TimestampValue
 
+
+@lru_cache(maxsize=512)
 def estimate_tokens(text: str) -> int:
     return len(text) // 4
 
@@ -21,6 +23,8 @@ def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int
 
     chunks: list[str] = []
     current_sentences: list[str] = []
+    current_token_counts: list[int] = []
+    current_token_total = 0
 
     for sentence in sentences:
         sentence_tokens = estimate_tokens(sentence)
@@ -30,27 +34,37 @@ def chunk_transcript(text: str, chunk_tokens: int = 3000, overlap_sentences: int
                 chunks.append(sentence)
                 continue
             current_sentences.append(sentence)
+            current_token_counts.append(sentence_tokens)
+            current_token_total = sentence_tokens
             continue
 
-        candidate_sentences = current_sentences + [sentence]
-        if estimate_tokens(" ".join(candidate_sentences)) <= chunk_tokens:
+        if current_token_total + sentence_tokens <= chunk_tokens:
             current_sentences.append(sentence)
+            current_token_counts.append(sentence_tokens)
+            current_token_total += sentence_tokens
             continue
 
         chunks.append(" ".join(current_sentences))
 
-        overlap: list[str] = (
-            current_sentences[-overlap_sentences:] if overlap_sentences > 0 else []
+        overlap_sentence_data = list(zip(current_sentences, current_token_counts, strict=False))
+        overlap: list[tuple[str, int]] = (
+            overlap_sentence_data[-overlap_sentences:] if overlap_sentences > 0 else []
         )
-        while overlap and estimate_tokens(" ".join(overlap + [sentence])) > chunk_tokens:
+        overlap_token_total = sum(token_count for _, token_count in overlap)
+        while overlap and overlap_token_total + sentence_tokens > chunk_tokens:
+            overlap_token_total -= overlap[0][1]
             overlap = overlap[1:]
 
         if sentence_tokens > chunk_tokens:
             chunks.append(sentence)
             current_sentences = []
+            current_token_counts = []
+            current_token_total = 0
             continue
 
-        current_sentences = overlap + [sentence]
+        current_sentences = [sentence_text for sentence_text, _ in overlap] + [sentence]
+        current_token_counts = [token_count for _, token_count in overlap] + [sentence_tokens]
+        current_token_total = overlap_token_total + sentence_tokens
 
     if current_sentences:
         chunks.append(" ".join(current_sentences))

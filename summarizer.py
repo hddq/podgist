@@ -1,28 +1,38 @@
-from typing import Any, cast
-
 import os
 
 import requests
-from google import genai
+from openai import APIConnectionError, APIStatusError, OpenAI
 
 from config import (
     CHUNK_PROMPT_FILE,
     FINAL_PROMPT_FILE,
-    GEMINI_API_KEY,
-    GEMINI_MODEL,
-    LLM_PROVIDER,
-    OLLAMA_AUTO_PULL,
-    OLLAMA_BASE_URL,
-    OLLAMA_MODEL,
-    OLLAMA_NUM_CTX,
+    LLM_API_KEY,
+    LLM_AUTO_PULL,
+    LLM_BASE_URL,
+    LLM_EXTRA_BODY,
+    LLM_MODEL,
+    LLM_TIMEOUT,
     PIPELINE_CHUNK_TOKENS,
     PIPELINE_CHUNKING_THRESHOLD,
     PROMPT_FILE,
     SUMMARY_DIR,
     TRANSCRIPT_DIR,
 )
-from models import string_key_dict
 from utils import chunk_transcript, estimate_tokens
+
+
+def _make_llm_client() -> OpenAI:
+    base_url = LLM_BASE_URL.rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url += "/v1"
+    return OpenAI(base_url=base_url, api_key=LLM_API_KEY or "not-needed", timeout=LLM_TIMEOUT)
+
+
+def _pull_ollama_model() -> bool:
+    pull_url = f"{LLM_BASE_URL.rstrip('/')}/api/pull"
+    response = requests.post(url=pull_url, json={"name": LLM_MODEL, "stream": False}, timeout=1800)
+    response.raise_for_status()
+    return True
 
 
 def _read_prompt(path: str) -> str | None:
@@ -39,89 +49,40 @@ def _read_prompt(path: str) -> str | None:
 
 
 def _call_llm(prompt: str) -> str | None:
-    if LLM_PROVIDER == "gemini":
-        return summarize_with_gemini(prompt)
-    if LLM_PROVIDER == "ollama":
-        return summarize_with_ollama(prompt)
-
-    print(f"Unknown LLM_PROVIDER: {LLM_PROVIDER}")
-    return None
-
-
-def summarize_with_gemini(prompt: str) -> str | None:
-    """
-    Summarizes the prompt using Google Gemini.
-    """
-    if not GEMINI_API_KEY:
-        print("GEMINI_API_KEY is not set.")
+    if not LLM_BASE_URL or not LLM_MODEL:
         return None
 
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        response = cast(Any, client.models).generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
+    def _do_call() -> str | None:
+        client = _make_llm_client()
+        response = client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            extra_body=LLM_EXTRA_BODY or None,
         )
-        text = getattr(response, "text", None)
-        return text if isinstance(text, str) else None
-    except Exception as e:
-        print(f"Gemini summarization failed: {e}")
+        choice = response.choices[0] if response.choices else None
+        if choice and choice.message and choice.message.content:
+            return choice.message.content
         return None
-
-
-def summarize_with_ollama(prompt: str) -> str | None:
-    """
-    Summarizes the prompt using Ollama.
-    """
-    base_url = OLLAMA_BASE_URL.rstrip("/")
-    url = f"{base_url}/api/generate"
-    payload = {
-        "model": OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"num_ctx": OLLAMA_NUM_CTX},
-        "think": False,
-    }
-
-    def pull_model_if_missing() -> None:
-        pull_url = f"{base_url}/api/pull"
-        pull_payload = {"name": OLLAMA_MODEL, "stream": False}
-        print(f"Ollama model '{OLLAMA_MODEL}' is missing. Pulling it now...")
-        pull_response = requests.post(pull_url, json=pull_payload, timeout=1800)
-        pull_response.raise_for_status()
-        print(f"Successfully pulled Ollama model '{OLLAMA_MODEL}'.")
 
     try:
-        response = requests.post(url, json=payload, timeout=300)
-        if response.status_code == 404 and OLLAMA_AUTO_PULL:
-            error_text = ""
+        return _do_call()
+    except APIConnectionError:
+        print(f"Failed to connect to LLM at {LLM_BASE_URL}. Is the server running?")
+        return None
+    except APIStatusError as exc:
+        if LLM_AUTO_PULL and exc.status_code == 404:
+            print(f"Model '{LLM_MODEL}' not found. Attempting to pull via Ollama...")
             try:
-                error_data = string_key_dict(response.json())
-                raw_error_text = error_data.get("error", "")
-                if isinstance(raw_error_text, str):
-                    error_text = raw_error_text
-            except Exception:
-                pass
-            if "not found" in error_text.lower():
-                pull_model_if_missing()
-                retry_response = requests.post(url, json=payload, timeout=300)
-                retry_response.raise_for_status()
-                retry_data = string_key_dict(retry_response.json())
-                if not retry_data:
-                    return None
-                retry_text = retry_data.get("response")
-                return retry_text if isinstance(retry_text, str) else None
-        response.raise_for_status()
-        data = string_key_dict(response.json())
-        if not data:
-            return None
-        response_text = data.get("response")
-        return response_text if isinstance(response_text, str) else None
-    except requests.exceptions.ConnectionError:
-        print(f"Failed to connect to Ollama at {url}. Is Ollama running?")
+                _pull_ollama_model()
+                print(f"Successfully pulled model '{LLM_MODEL}'. Retrying...")
+                return _do_call()
+            except Exception as retry_exc:
+                print(f"LLM retry after pull failed: {retry_exc}")
+                return None
+        print(f"LLM request failed: {exc}")
         return None
     except Exception as e:
-        print(f"Ollama summarization failed: {e}")
+        print(f"LLM request failed: {e}")
         return None
 
 
@@ -161,7 +122,7 @@ def _summarize_chunked(transcript_text: str) -> str | None:
 
 def summarize(transcript_path: str) -> str | None:
     """
-    Summarizes the given transcript file using the configured LLM provider.
+    Summarizes the given transcript file using the configured LLM.
     """
     if not transcript_path or not os.path.exists(transcript_path):
         print(f"Transcript not found: {transcript_path}")
@@ -203,7 +164,7 @@ def summarize(transcript_path: str) -> str | None:
     token_count = estimate_tokens(transcript_text)
     print(f"Estimated transcript tokens: {token_count}")
 
-    print(f"Summarizing {os.path.basename(transcript_path)} using {LLM_PROVIDER}...")
+    print(f"Summarizing {os.path.basename(transcript_path)}...")
 
     if token_count <= PIPELINE_CHUNKING_THRESHOLD:
         prompt_template = _read_prompt(PROMPT_FILE)

@@ -120,6 +120,12 @@ def get_config_str(key_path: str, default: str) -> str:
     return default
 
 
+def get_config_mapping(key_path: str, default: dict[str, object] | None = None) -> dict[str, object]:
+    value = get_config(key_path, default or {})
+    mapping = string_key_dict(value)
+    return mapping if mapping else (default.copy() if default is not None else {})
+
+
 def get_config_bool(key_path: str, default: bool = False) -> bool:
     """
     Retrieves a boolean config value with tolerant parsing.
@@ -140,7 +146,7 @@ def get_config_bool(key_path: str, default: bool = False) -> bool:
 # --- Secrets (From Environment Only) ---
 GPODDER_USERNAME: str | None = os.getenv("GPODDER_USERNAME")
 GPODDER_PASSWORD: str | None = os.getenv("GPODDER_PASSWORD")
-GEMINI_API_KEY: str | None = os.getenv("GEMINI_API_KEY")
+LLM_API_KEY: str | None = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
 WHISPER_API_KEY: str | None = os.getenv("WHISPER_API_KEY")
 
 AUTH: tuple[str | None, str | None] = (GPODDER_USERNAME, GPODDER_PASSWORD)
@@ -166,14 +172,15 @@ CHUNK_PROMPT_FILE: str = get_config_str("paths.prompt_chunk_file", "config/promp
 FINAL_PROMPT_FILE: str = get_config_str("paths.prompt_final_file", "config/prompt_final.md")
 
 # LLM Configuration
-LLM_PROVIDER: str = get_config_str("llm.provider", "gemini").lower()
-GEMINI_MODEL: str = get_config_str("llm.gemini.model", "gemini-3-flash-preview")
-OLLAMA_BASE_URL: str = get_config_str("llm.ollama.base_url", "http://localhost:11434")
-OLLAMA_MODEL: str = get_config_str("llm.ollama.model", "llama3")
-OLLAMA_AUTO_PULL: bool = get_config_bool("llm.ollama.auto_pull", True)
-OLLAMA_NUM_CTX: int = get_config_int("llm.ollama.num_ctx", 16384)
+LLM_BASE_URL: str = get_config_str("llm.base_url", "").rstrip("/")
+LLM_MODEL: str = get_config_str("llm.model", "")
+LLM_TIMEOUT: int = get_config_int("llm.timeout", 300)
+LLM_EXTRA_BODY: dict[str, object] = get_config_mapping("llm.extra_body")
+LLM_AUTO_PULL: bool = get_config_bool("llm.auto_pull", False)
 
-# Whisper Server Configuration
+# Whisper Configuration
 WHISPER_BASE_URL: str = get_config_str("whisper.base_url", "http://localhost:8000").rstrip("/")
 WHISPER_MODEL: str = get_config_str("whisper.model", "base")
 WHISPER_TIMEOUT: int = get_config_int("whisper.timeout", 600)
+WHISPER_LANGUAGE: str = get_config_str("whisper.language", "")
+WHISPER_PROMPT: str = get_config_str("whisper.prompt", "")

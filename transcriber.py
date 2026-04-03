@@ -1,17 +1,25 @@
 import os
 import subprocess
 
-import requests
+from openai import APIConnectionError, APITimeoutError, OpenAI
 
 from config import (
     DOWNLOAD_DIR,
     TRANSCRIPT_DIR,
     WHISPER_API_KEY,
     WHISPER_BASE_URL,
+    WHISPER_LANGUAGE,
     WHISPER_MODEL,
+    WHISPER_PROMPT,
     WHISPER_TIMEOUT,
 )
-from models import string_key_dict
+
+
+def _make_whisper_client() -> OpenAI:
+    base_url = WHISPER_BASE_URL.rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url += "/v1"
+    return OpenAI(base_url=base_url, api_key=WHISPER_API_KEY or "not-needed", timeout=WHISPER_TIMEOUT)
 
 
 def convert_to_wav_16k(input_path: str) -> tuple[str | None, bool]:
@@ -48,42 +56,26 @@ def transcribe_with_whisper_server(wav_path: str) -> str | None:
     """
     Sends audio to an OpenAI-compatible Whisper server and returns transcript text.
     """
-    url = f"{WHISPER_BASE_URL}/v1/audio/transcriptions"
-    headers: dict[str, str] = {}
-    if WHISPER_API_KEY:
-        headers["Authorization"] = f"Bearer {WHISPER_API_KEY}"
-
-    payload = {"model": WHISPER_MODEL}
-
     try:
-        with open(wav_path, "rb") as audio_file:
-            files = {"file": (os.path.basename(wav_path), audio_file, "audio/wav")}
-            response = requests.post(
-                url,
-                data=payload,
-                files=files,
-                headers=headers,
-                timeout=WHISPER_TIMEOUT,
-            )
-
-        response.raise_for_status()
-        data = string_key_dict(response.json())
-        if not data:
-            print(f"Whisper server returned invalid JSON: {data!r}")
-            return None
-
-        text = data.get("text")
+        client = _make_whisper_client()
+        kwargs: dict[str, object] = {"model": WHISPER_MODEL, "file": open(wav_path, "rb")}
+        if WHISPER_LANGUAGE:
+            kwargs["language"] = WHISPER_LANGUAGE
+        if WHISPER_PROMPT:
+            kwargs["prompt"] = WHISPER_PROMPT
+        transcript = client.audio.transcriptions.create(**kwargs)  # type: ignore[arg-type]
+        text = getattr(transcript, "text", None)
+        text = text if isinstance(text, str) else None
         if not text:
-            print(f"Whisper server response missing 'text': {data}")
-            return None
-        if not isinstance(text, str):
-            print(f"Whisper server returned a non-string transcript: {data}")
+            print("Whisper server response missing 'text'.")
             return None
         return text
-    except requests.exceptions.ConnectionError:
-        print(f"Failed to connect to Whisper server at {url}. Is it running?")
+    except APIConnectionError:
+        print(
+            f"Failed to connect to Whisper server at {WHISPER_BASE_URL}. Is it running?"
+        )
         return None
-    except requests.exceptions.Timeout:
+    except APITimeoutError:
         print(f"Whisper server request timed out after {WHISPER_TIMEOUT}s.")
         return None
     except Exception as e:
