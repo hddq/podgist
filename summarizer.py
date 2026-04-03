@@ -12,6 +12,7 @@ from config import (
     LLM_BASE_URL,
     LLM_EXTRA_BODY,
     LLM_MODEL,
+    LLM_PROVIDER,
     LLM_TIMEOUT,
     PIPELINE_CHUNK_TOKENS,
     PIPELINE_CHUNKING_THRESHOLD,
@@ -59,11 +60,41 @@ def _read_prompt(path: str) -> str | None:
         return None
 
 
+def _call_ollama_native(prompt: str) -> str | None:
+    """Call Ollama via its native /api/chat endpoint, which correctly handles options like num_ctx."""
+    chat_url = f"{LLM_BASE_URL.rstrip('/')}/api/chat"
+    payload: dict[str, object] = {
+        "model": LLM_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+    }
+    if LLM_EXTRA_BODY:
+        payload.update(LLM_EXTRA_BODY)
+    try:
+        response = requests.post(url=chat_url, json=payload, timeout=LLM_TIMEOUT)
+        response.raise_for_status()
+        data = response.json()
+        message = data.get("message", {})
+        content = message.get("content")
+        return content if isinstance(content, str) else None
+    except requests.exceptions.ConnectionError:
+        print(f"Failed to connect to Ollama at {LLM_BASE_URL}. Is the server running?")
+        return None
+    except requests.exceptions.HTTPError as e:
+        print(f"Ollama request failed: {e}")
+        return None
+    except Exception as e:
+        print(f"Ollama request failed unexpectedly: {e}")
+        return None
+
+
 def _call_llm(prompt: str) -> str | None:
     if not LLM_BASE_URL or not LLM_MODEL:
         return None
 
     def _do_call() -> str | None:
+        if LLM_PROVIDER.lower() == "ollama":
+            return _call_ollama_native(prompt)
         client = _make_llm_client()
         response = client.chat.completions.create(
             model=LLM_MODEL,

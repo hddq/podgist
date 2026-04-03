@@ -186,6 +186,7 @@ LLM_BASE_URL: str = get_config_str("llm.base_url", "").rstrip("/")
 LLM_MODEL: str = get_config_str("llm.model", "")
 LLM_TIMEOUT: int = get_config_int("llm.timeout", 300)
 LLM_EXTRA_BODY: dict[str, object] = get_config_mapping("llm.extra_body")
+LLM_PROVIDER: str = get_config_str("llm.provider", "")
 LLM_AUTO_PULL: bool = get_config_bool("llm.auto_pull", False)
 
 # Whisper Configuration

@@ -28,6 +28,9 @@ llm:
   # Base URL of any OpenAI-compatible API.
   # Works with OpenAI, Ollama, vLLM, llama.cpp, Gemini (via OpenAI compat endpoint), etc.
   base_url: "http://localhost:11434"
+  # Optional provider hint. Set to "ollama" to use Ollama's native /api/chat endpoint,
+  # which correctly handles options like num_ctx. Leave empty for generic OpenAI-compatible APIs.
+  provider: "ollama"
   model: "llama3"
   # API key should be provided via .env as LLM_API_KEY when required.
   # HTTP timeout in seconds for LLM requests
