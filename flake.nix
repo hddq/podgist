@@ -19,6 +19,7 @@
               nodejs
               python314
               ffmpeg
+              ruff
             ];
 
             shellHook = '' # bash
@@ -35,6 +36,8 @@
                 echo "Syncing Python dependencies..."
                 pip install --quiet --upgrade pip
                 pip install --quiet --editable '.[dev]'
+
+                rm -f venv/bin/ruff
               else
                 echo "⚠️ pyproject.toml not found!"
               fi
