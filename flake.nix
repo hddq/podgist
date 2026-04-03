@@ -13,11 +13,19 @@
       devShells = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          pythonVersion =
+            pkgs.lib.strings.removeSuffix "\n" (builtins.readFile ./.python-version);
+          pythonAttr = "python${builtins.replaceStrings [ "." ] [ "" ] pythonVersion}";
+          pythonPkg =
+            if builtins.hasAttr pythonAttr pkgs then
+              builtins.getAttr pythonAttr pkgs
+            else
+              throw "Unsupported Python version '${pythonVersion}' in .python-version";
         in {
           default = pkgs.mkShell {
             packages = with pkgs; [
               nodejs
-              python314
+              pythonPkg
               ffmpeg
               ruff
             ];

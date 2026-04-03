@@ -1,4 +1,5 @@
-FROM docker.io/library/python:3.14-alpine
+ARG PYTHON_VERSION=3.14
+FROM docker.io/library/python:${PYTHON_VERSION}-alpine
 WORKDIR /app
 RUN apk upgrade --no-cache && \
     apk add --no-cache ffmpeg

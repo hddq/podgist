@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version-file: '.python-version'
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -29,6 +29,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e .[dev]
+
+      - name: Verify Python version metadata is synchronized
+        run: |
+          python scripts/sync_python_version.py
+          git diff --exit-code -- pyproject.toml Dockerfile README.md
 
       - name: Run Ruff Linter
         run: python -m ruff check .

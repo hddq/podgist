@@ -84,6 +84,7 @@ Get up and running without installing Python or building code.
     -   **Important**: Set `llm.base_url` and `llm.model` to your LLM backend.
     -   **Important**: Set `whisper.base_url` to your Whisper server endpoint.
     -   If either file is missing, the app will create it in `config/` from the bundled examples on startup.
+    -   `.python-version` is the source of truth for the Python minor version. After changing it, run `python3 scripts/sync_python_version.py` to update `pyproject.toml`, `Dockerfile`, and `README.md`.
 
 4.  **Run**:
     ```bash
