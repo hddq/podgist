@@ -2,6 +2,11 @@
 
 PodGist is an automated tool that "listens" to your podcast habits and creates concise summaries for you. It monitors your [gPodder](https://gpodder.net) account (or a self-hosted instance) for played episodes, automatically downloads the audio, transcribes it using a Whisper server, and generates a structured summary using **Google Gemini** or **Ollama**.
 
+> [!WARNING]
+> **PodGist is under active development.** The `master` branch and `beta` releases
+> may contain breaking changes between versions — including config file changes that
+> require a manual migration. Always check the release notes before upgrading.
+
 ## ✨ Features
 
 - **🔄 Automated Sync**: Polls gPodder.net (or your self-hosted instance) for new "play" actions (episodes you've listened to).
@@ -10,6 +15,15 @@ PodGist is an automated tool that "listens" to your podcast habits and creates c
 - **🤖 AI Summarization**: Generates summaries using Google Gemini (Cloud) or Ollama (Local).
 - **🐳 Docker Ready**: Easy to deploy with Docker Compose.
 - **⚙️ Highly Configurable**: Customize models, prompts, and paths easily.
+
+## 🐳 Container Tags
+
+| Tag | Description |
+|-----|-------------|
+| `latest` / `v*.*.*` | Stable release, pinned to a specific version. Receives weekly security patches if it's the newest tag. |
+| `master` | Rolling release, always tracks the latest commit on `master`. May break without notice. |
+
+For production use, always pin to a specific version tag (e.g. `v1.0.0-beta.1`).
 
 ## 🚀 Getting Started
 
