@@ -17,10 +17,11 @@ CONFIG_FILE: Final[Path] = CONFIG_DIR / "config.yaml"
 PROMPT_FILE_DEFAULT: Final[Path] = CONFIG_DIR / "prompt.md"
 CHUNK_PROMPT_FILE_DEFAULT: Final[Path] = CONFIG_DIR / "prompt_chunk.md"
 FINAL_PROMPT_FILE_DEFAULT: Final[Path] = CONFIG_DIR / "prompt_final.md"
-CONFIG_EXAMPLE_FILE: Final[Path] = Path("config.example.yaml")
-PROMPT_EXAMPLE_FILE: Final[Path] = Path("prompt.example.md")
-CHUNK_PROMPT_EXAMPLE_FILE: Final[Path] = Path("prompt_chunk.example.md")
-FINAL_PROMPT_EXAMPLE_FILE: Final[Path] = Path("prompt_final.example.md")
+CONFIG_EXAMPLE_DIR: Final[Path] = Path("config.example")
+CONFIG_EXAMPLE_FILE: Final[Path] = CONFIG_EXAMPLE_DIR / "config.yaml"
+PROMPT_EXAMPLE_FILE: Final[Path] = CONFIG_EXAMPLE_DIR / "prompt.md"
+CHUNK_PROMPT_EXAMPLE_FILE: Final[Path] = CONFIG_EXAMPLE_DIR / "prompt_chunk.md"
+FINAL_PROMPT_EXAMPLE_FILE: Final[Path] = CONFIG_EXAMPLE_DIR / "prompt_final.md"
 
 
 def ensure_runtime_config_files() -> None:

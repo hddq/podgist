@@ -34,13 +34,12 @@ Get up and running without installing Python or building code.
 1.  **Download Files**:
     Create a directory and save the following files into it:
     -   [`docker-compose.yml`](docker-compose.yml)
-    -   [`config.example.yaml`](config.example.yaml)
-    -   [`prompt.example.md`](prompt.example.md)
-
+    -   [`config.example/`](config.example/) (the whole directory)
 2.  **Configure**:
-    -   Create a `config/` directory.
-    -   Copy `config.example.yaml` to `config/config.yaml`.
-    -   Copy `prompt.example.md` to `config/prompt.md`.
+    -   Copy `config.example/` to `config/`:
+        ```bash
+        cp -r config.example config
+        ```
     -   Edit `config/config.yaml` to set your preferences (paths, models, etc.).
     -   If either file is missing, the app will create it in `config/` from the bundled examples on startup.
     -   Set `llm.base_url` to your LLM server URL and `llm.model` to the model name.
@@ -78,9 +77,10 @@ Get up and running without installing Python or building code.
 
 3.  **Configure**:
     -   Copy `.env.example` to `.env` and fill in credentials.
-    -   Create a `config/` directory.
-    -   Copy `config.example.yaml` to `config/config.yaml`.
-    -   Copy `prompt.example.md` to `config/prompt.md`.
+    -   Copy `config.example/` to `config/`:
+        ```bash
+        cp -r config.example config
+        ```
     -   **Important**: Set `llm.base_url` and `llm.model` to your LLM backend.
     -   **Important**: Set `whisper.base_url` to your Whisper server endpoint.
     -   If either file is missing, the app will create it in `config/` from the bundled examples on startup.
