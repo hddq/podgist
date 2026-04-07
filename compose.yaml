@@ -1,0 +1,44 @@
+services:
+  db:
+    image: docker.io/library/postgres:18-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: podgist
+      POSTGRES_USER: podgist
+      POSTGRES_PASSWORD: podgist
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U podgist -d podgist"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PODGIST_DB_DSN: postgres://podgist:podgist@db:5432/podgist?sslmode=disable
+    command: ["migrate", "up"]
+    volumes:
+      - ./config.yaml:/etc/podgist/config.yaml:ro
+
+  app:
+    build:
+      context: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      PODGIST_DB_DSN: postgres://podgist:podgist@db:5432/podgist?sslmode=disable
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/podgist/config.yaml:ro
+
+volumes:
+  postgres_data:
