@@ -18,6 +18,8 @@ services:
   migrate:
     build:
       context: .
+      args:
+        GO_VERSION: ${GO_VERSION:?set GO_VERSION from go.mod, e.g. GO_VERSION=$(./scripts/go-version.sh)}
     depends_on:
       db:
         condition: service_healthy
@@ -30,6 +32,8 @@ services:
   app:
     build:
       context: .
+      args:
+        GO_VERSION: ${GO_VERSION:?set GO_VERSION from go.mod, e.g. GO_VERSION=$(./scripts/go-version.sh)}
     depends_on:
       migrate:
         condition: service_completed_successfully

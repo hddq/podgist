@@ -22,6 +22,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Read Go version from go.mod
+        id: go-version
+        run: echo "value=$(./scripts/go-version.sh)" >> "$GITHUB_OUTPUT"
+
       - name: Log in to the Container registry
         uses: docker/login-action@v4
         with:
@@ -45,5 +49,7 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            GO_VERSION=${{ steps.go-version.outputs.value }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

@@ -1,4 +1,5 @@
-FROM docker.io/library/golang:1.26-trixie AS builder
+ARG GO_VERSION
+FROM docker.io/library/golang:${GO_VERSION}-trixie AS builder
 
 WORKDIR /src
 
