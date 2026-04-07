@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,21 +13,45 @@ import (
 
 	"github.com/hddq/podgist/internal/config"
 	apphttp "github.com/hddq/podgist/internal/http"
+	"github.com/hddq/podgist/internal/migrations"
 	"github.com/hddq/podgist/internal/service"
 	"github.com/hddq/podgist/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
-	configPath := "/etc/podgist/config.yaml"
-	if len(os.Args) > 1 {
-		configPath = os.Args[1]
+	if err := run(os.Args[1:]); err != nil {
+		slog.Error("command failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string) error {
+	command := "serve"
+	commandArgs := args
+	if len(args) > 0 && (args[0] == "serve" || args[0] == "migrate") {
+		command = args[0]
+		commandArgs = args[1:]
 	}
 
+	switch command {
+	case "serve":
+		return runServe(commandArgs)
+	case "migrate":
+		return runMigrate(commandArgs)
+	default:
+		return fmt.Errorf("unknown command %q", command)
+	}
+}
+
+func runServe(args []string) error {
+	configPath, err := configPathFromArgs(args)
+	if err != nil {
+		return err
+	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		slog.Error("failed to load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	logger := setupLogger(cfg.Logging)
@@ -36,14 +61,12 @@ func main() {
 
 	pool, err := pgxpool.New(ctx, cfg.Database.GetDSN())
 	if err != nil {
-		logger.Error("failed to connect to database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer pool.Close()
 
 	if err := pool.Ping(ctx); err != nil {
-		logger.Error("failed to ping database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
 	st := store.New(pool)
@@ -79,8 +102,51 @@ func main() {
 
 	logger.Info("starting server", "addr", addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Error("server error", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("server error: %w", err)
+	}
+
+	return nil
+}
+
+func runMigrate(args []string) error {
+	if len(args) == 0 {
+		return errors.New("missing migrate subcommand")
+	}
+	if args[0] != "up" {
+		return fmt.Errorf("unsupported migrate subcommand %q", args[0])
+	}
+
+	configPath, err := configPathFromArgs(args[1:])
+	if err != nil {
+		return err
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	logger := setupLogger(cfg.Logging)
+	ctx := context.Background()
+	dir := migrations.Dir("")
+
+	logger.Info("running migrations", "dir", dir)
+	if err := migrations.Up(ctx, cfg.Database.GetDSN(), dir); err != nil {
+		return err
+	}
+	logger.Info("migrations completed", "dir", dir)
+
+	return nil
+}
+
+func configPathFromArgs(args []string) (string, error) {
+	configPath := "/etc/podgist/config.yaml"
+	switch len(args) {
+	case 0:
+		return configPath, nil
+	case 1:
+		return args[0], nil
+	default:
+		return "", fmt.Errorf("unexpected arguments: %v", args)
 	}
 }
 
