@@ -1,0 +1,25 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "podgist"
+  user: "podgist"
+  password: "podgist"
+  sslmode: "disable"
+
+auth:
+  realm: "gpodder.net"
+  bcrypt_cost: 10
+
+api:
+  max_episode_actions: 500
+  max_request_size: 5242880
+
+logging:
+  level: "info"
+  format: "text"
