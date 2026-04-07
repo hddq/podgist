@@ -27,6 +27,8 @@
             export GOMODCACHE="$PWD/.gomodcache"
             export PATH="$GOPATH/bin:$PATH"
             export CGO_ENABLED=0
+            export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock
+            export TESTCONTAINERS_RYUK_DISABLED=true
             mkdir -p "$GOPATH" "$GOMODCACHE"
           '';
         };
