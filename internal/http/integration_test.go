@@ -109,7 +109,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		updatesSvc := service.NewUpdatesService(st)
 
 		handlers := apphttp.NewHandlers(authSvc, subsSvc, epsSvc, devsSvc, syncSvc, settingsSvc, updatesSvc, 5*1024*1024, logger)
-  router := apphttp.NewRouterLegacy(authSvc, handlers, "test", logger)
+		router := apphttp.NewAPIRouter(authSvc, handlers, "test", logger)
 
 		httpTestEnv = &testEnv{
 			server: httptest.NewServer(router),
@@ -766,7 +766,7 @@ func TestProtectedEndpointNoAuth(t *testing.T) {
 	}
 }
 
-func TestLegacyRouterDashboardRouteNotRegistered(t *testing.T) {
+func TestAPIRouterDashboardRouteNotRegistered(t *testing.T) {
 	env := setupTestEnv(t)
 	resp := env.doRequest(t, "GET", "/api/podgist/v1/dashboard", nil, false)
 	defer resp.Body.Close()

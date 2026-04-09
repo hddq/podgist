@@ -22,9 +22,30 @@ func NewRouter(
 	r := chi.NewRouter()
 	r.Use(RequestLogger(logger))
 
+	registerAPIRoutes(r, auth, handlers, realm)
+	registerDashboardRoutes(r, auth, dashHandlers)
+	registerSPARoutes(r, webFS)
+
+	return r
+}
+
+func NewAPIRouter(
+	auth *service.AuthService,
+	handlers *Handlers,
+	realm string,
+	logger *slog.Logger,
+) http.Handler {
+	r := chi.NewRouter()
+	r.Use(RequestLogger(logger))
+
+	registerAPIRoutes(r, auth, handlers, realm)
+
+	return r
+}
+
+func registerAPIRoutes(r chi.Router, auth *service.AuthService, handlers *Handlers, realm string) {
 	authMW := BasicAuthMiddleware(auth, realm)
 	userCheck := CheckUsernameMiddleware
-	sessionMW := SessionAuthMiddleware(auth)
 
 	// Auth endpoints
 	r.With(authMW, userCheck).Post("/api/2/auth/{username}/login.json", handlers.Login)
@@ -54,9 +75,12 @@ func NewRouter(
 	// Settings
 	r.With(authMW, userCheck).Get("/api/2/settings/{username}/{scope}.json", handlers.Settings)
 	r.With(authMW, userCheck).Post("/api/2/settings/{username}/{scope}.json", handlers.Settings)
+}
 
+func registerDashboardRoutes(r chi.Router, auth *service.AuthService, dashHandlers *DashboardHandlers) {
 	// Dashboard API — /api/podgist/v1
 	if dashHandlers != nil {
+		sessionMW := SessionAuthMiddleware(auth)
 		r.Route("/api/podgist/v1", func(r chi.Router) {
 			r.Post("/register", dashHandlers.Register)
 			r.Post("/login", dashHandlers.Login)
@@ -70,7 +94,9 @@ func NewRouter(
 			r.With(sessionMW).Get("/account", dashHandlers.Account)
 		})
 	}
+}
 
+func registerSPARoutes(r chi.Router, webFS fs.FS) {
 	// Dashboard SPA
 	if webFS != nil {
 		spaHandler := spaFileServer(webFS)
@@ -80,8 +106,6 @@ func NewRouter(
 		r.Get("/app", spaHandler.ServeHTTP)
 		r.Get("/app/*", spaHandler.ServeHTTP)
 	}
-
-	return r
 }
 
 func spaFileServer(webFS fs.FS) http.Handler {
@@ -120,14 +144,4 @@ func serveIndexHTML(w http.ResponseWriter, r *http.Request, webFS fs.FS) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	http.ServeContent(w, r, "index.html", time.Time{}, strings.NewReader(string(data)))
-}
-
-// NewRouterLegacy preserves the old signature for existing tests.
-func NewRouterLegacy(
-	auth *service.AuthService,
-	handlers *Handlers,
-	realm string,
-	logger *slog.Logger,
-) http.Handler {
-	return NewRouter(auth, handlers, nil, realm, logger, nil)
 }
