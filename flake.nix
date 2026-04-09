@@ -41,6 +41,8 @@
             pkgs.gopls
             pkgs.gotools
             pkgs.postgresql_18
+            pkgs.nodejs_25
+            pkgs.pnpm_10
           ];
 
           shellHook = '' # bash
