@@ -34,13 +34,13 @@
 		<span class="loading loading-spinner loading-lg text-primary"></span>
 	</div>
 {:else}
-	<div class="drawer lg:drawer-open h-screen">
+	<div class="drawer h-dvh overflow-hidden lg:drawer-open">
 		<input id="main-drawer" type="checkbox" class="drawer-toggle" />
 
 		<!-- Drawer content -->
-		<div class="drawer-content flex flex-col">
+		<div class="drawer-content flex h-dvh min-h-0 flex-col overflow-hidden">
 			<!-- Mobile-only navbar -->
-			<div class="navbar bg-base-200 border-b border-base-300 lg:hidden">
+			<div class="navbar border-b border-base-300 bg-base-200 lg:hidden">
 				<div class="flex-none">
 					<label for="main-drawer" class="btn btn-square btn-ghost" aria-label="Open menu">
 						<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block h-5 w-5 stroke-current">
@@ -54,13 +54,13 @@
 			</div>
 
 			<!-- Page content -->
-			<main class="flex-1 p-4 lg:p-8">
+			<main class="flex-1 overflow-y-auto p-4 lg:p-8">
 				{@render children()}
 			</main>
 		</div>
 
 		<!-- Drawer side -->
-		<div class="drawer-side">
+		<div class="drawer-side h-dvh">
 			<label for="main-drawer" aria-label="Close menu" class="drawer-overlay"></label>
 			<div class="flex h-full w-72 flex-col overflow-hidden bg-base-200">
 				<Sidebar />
