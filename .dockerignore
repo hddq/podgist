@@ -1,4 +1,10 @@
 .git
-.gopath
-.gomodcache
+.github
 .direnv
+.gomodcache
+.gopath
+.tmp
+config.yaml
+web/node_modules
+web/build
+internal/webui/dist
