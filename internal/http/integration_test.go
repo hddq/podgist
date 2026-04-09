@@ -109,7 +109,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		updatesSvc := service.NewUpdatesService(st)
 
 		handlers := apphttp.NewHandlers(authSvc, subsSvc, epsSvc, devsSvc, syncSvc, settingsSvc, updatesSvc, 5*1024*1024, logger)
-		router := apphttp.NewRouter(authSvc, handlers, "test", logger)
+  router := apphttp.NewRouterLegacy(authSvc, handlers, "test", logger)
 
 		httpTestEnv = &testEnv{
 			server: httptest.NewServer(router),
@@ -763,6 +763,15 @@ func TestProtectedEndpointNoAuth(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 401 {
 		t.Errorf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestLegacyRouterDashboardRouteNotRegistered(t *testing.T) {
+	env := setupTestEnv(t)
+	resp := env.doRequest(t, "GET", "/api/podgist/v1/dashboard", nil, false)
+	defer resp.Body.Close()
+	if resp.StatusCode != 404 {
+		t.Errorf("expected 404, got %d", resp.StatusCode)
 	}
 }
 

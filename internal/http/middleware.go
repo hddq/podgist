@@ -159,6 +159,33 @@ func equalUsername(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
+func SessionAuthMiddleware(auth *service.AuthService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookie, err := r.Cookie(sessionCookieName)
+			if err != nil || cookie.Value == "" {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			user, err := auth.GetUserBySessionID(r.Context(), cookie.Value)
+			if err != nil {
+				http.SetCookie(w, clearSessionCookie())
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			session, err := auth.RefreshSession(r.Context(), cookie.Value)
+			if err != nil {
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			http.SetCookie(w, sessionCookie(session))
+			ctx := context.WithValue(r.Context(), userContextKey, user)
+			ctx = context.WithValue(ctx, sessionContextKey, session)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

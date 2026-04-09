@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/hddq/podgist/internal/migrations"
 	"github.com/hddq/podgist/internal/service"
 	"github.com/hddq/podgist/internal/store"
+	"github.com/hddq/podgist/internal/webui"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -80,7 +82,14 @@ func runServe(args []string) error {
 	updatesSvc := service.NewUpdatesService(st)
 
 	handlers := apphttp.NewHandlers(authSvc, subsSvc, epsSvc, devsSvc, syncSvc, settingsSvc, updatesSvc, cfg.API.MaxRequestSize, logger)
-	router := apphttp.NewRouter(authSvc, handlers, cfg.Auth.Realm, logger)
+	dashHandlers := apphttp.NewDashboardHandlers(authSvc, st, logger)
+
+	var webFS fs.FS
+	if sub, err := fs.Sub(webui.Assets, "dist"); err == nil {
+		webFS = sub
+	}
+
+	router := apphttp.NewRouter(authSvc, handlers, dashHandlers, cfg.Auth.Realm, logger, webFS)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{

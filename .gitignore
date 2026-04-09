@@ -3,3 +3,4 @@
 .gopath/
 .tmp/
 config.yaml
+internal/webui/dist/
