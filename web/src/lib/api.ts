@@ -30,6 +30,13 @@ export interface UserInfo {
 	created_at: string;
 }
 
+export async function register(username: string, password: string): Promise<UserInfo> {
+	return request('/register', {
+		method: 'POST',
+		body: JSON.stringify({ username, password })
+	});
+}
+
 export async function login(username: string, password: string): Promise<UserInfo> {
 	return request('/login', {
 		method: 'POST',

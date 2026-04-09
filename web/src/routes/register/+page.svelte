@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
-	import { login, ApiError } from '$lib/api';
+	import { ApiError, register } from '$lib/api';
 	import { auth } from '$lib/auth.svelte';
 
 	let username = $state('');
 	let password = $state('');
+	let confirmPassword = $state('');
 	let error = $state('');
 	let loading = $state(false);
 
@@ -20,14 +21,20 @@
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		error = '';
+
+		if (password !== confirmPassword) {
+			error = 'Passwords do not match.';
+			return;
+		}
+
 		loading = true;
 		try {
-			const user = await login(username, password);
+			const user = await register(username, password);
 			auth.setUser(user);
 			goto(`${base}/dashboard`, { replaceState: true });
 		} catch (err) {
-			if (err instanceof ApiError && err.status === 401) {
-				error = 'Invalid username or password.';
+			if (err instanceof ApiError && err.status === 409) {
+				error = 'That username is already taken.';
 			} else {
 				error = 'Something went wrong. Please try again.';
 			}
@@ -38,7 +45,7 @@
 </script>
 
 <svelte:head>
-	<title>Login — Podgist</title>
+	<title>Register — Podgist</title>
 </svelte:head>
 
 <div class="flex min-h-screen items-center justify-center bg-base-100 px-4">
@@ -46,7 +53,7 @@
 		<div class="card-body gap-4">
 			<div class="mb-2 text-center">
 				<h1 class="text-3xl font-bold text-primary">🎙 Podgist</h1>
-				<p class="mt-1 text-sm text-base-content/60">Sign in to your dashboard</p>
+				<p class="mt-1 text-sm text-base-content/60">Create your dashboard account</p>
 			</div>
 
 			{#if error}
@@ -76,7 +83,19 @@
 						placeholder="••••••••"
 						bind:value={password}
 						required
-						autocomplete="current-password"
+						autocomplete="new-password"
+					/>
+				</fieldset>
+
+				<fieldset class="fieldset">
+					<legend class="fieldset-legend">Confirm Password</legend>
+					<input
+						type="password"
+						class="input w-full"
+						placeholder="••••••••"
+						bind:value={confirmPassword}
+						required
+						autocomplete="new-password"
 					/>
 				</fieldset>
 
@@ -84,13 +103,13 @@
 					{#if loading}
 						<span class="loading loading-spinner loading-sm"></span>
 					{/if}
-					Sign In
+					Create Account
 				</button>
 			</form>
 
 			<p class="text-center text-sm text-base-content/60">
-				Need an account?
-				<a class="link link-primary" href={`${base}/register`}>Create one</a>
+				Already have an account?
+				<a class="link link-primary" href={`${base}/login`}>Sign in</a>
 			</p>
 		</div>
 	</div>
