@@ -17,10 +17,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   migrate:
-    build:
-      context: .
-      args:
-        GO_VERSION: ${GO_VERSION:?set GO_VERSION from go.mod, e.g. GO_VERSION=$(./scripts/go-version.sh)}
+    image: ghcr.io/hddq/podgist:edge
+    pull_policy: always
+    # build:
+    #   context: .
+    #   args:
+    #     GO_VERSION: ${GO_VERSION:?set GO_VERSION from go.mod, e.g. GO_VERSION=$(./scripts/go-version.sh)}
     depends_on:
       db:
         condition: service_healthy
@@ -31,12 +33,12 @@ services:
       - ./config.yaml:/etc/podgist/config.yaml:ro
 
   app:
-    # image: ghcr.io/hddq/podgist:edge
-    # pull_policy: always
-    build:
-      context: .
-      args:
-        GO_VERSION: ${GO_VERSION:?set GO_VERSION from go.mod, e.g. GO_VERSION=$(./scripts/go-version.sh)}
+    image: ghcr.io/hddq/podgist:edge
+    pull_policy: always
+    # build:
+    #   context: .
+    #   args:
+    #     GO_VERSION: ${GO_VERSION:?set GO_VERSION from go.mod, e.g. GO_VERSION=$(./scripts/go-version.sh)}
     depends_on:
       migrate:
         condition: service_completed_successfully
