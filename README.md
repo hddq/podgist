@@ -2,7 +2,8 @@
 
 Podgist is a lightweight, self-hosted backend that implements the [gpodder.net](https://gpodder.net/) API. It allows you to sync your podcast subscriptions, episode playback progress, and devices across multiple clients (like [AntennaPod](https://github.com/AntennaPod/AntennaPod)) without relying on the official servers.
 
-> [!WARNING] This project is currently **Work In Progress**. The core sync API should work fine, however, the web dashboard is still early and lacks features
+> [!WARNING]
+> This project is currently **Work In Progress**. The core sync API should work fine, however, the web dashboard is still early and lacks features
 
 ## Docker Images
 
