@@ -26,6 +26,15 @@
 			return url;
 		}
 	}
+
+	function podcastName(url: string) {
+		try {
+			const u = new URL(url);
+			return u.hostname + u.pathname;
+		} catch {
+			return url;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -65,12 +74,17 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each data.recent_actions as action}
+								{#each data.recent_actions as action (action.timestamp + ':' + action.episode_url + ':' + action.action)}
 									<tr>
-										<td class="max-w-xs truncate">
-											<span class="text-sm" title={action.episode_url}>
-												{episodeName(action.episode_url)}
-											</span>
+										<td class="max-w-xs">
+											<div class="flex flex-col">
+												<span class="truncate text-sm font-medium" title={action.episode_url}>
+													{action.episode_title || episodeName(action.episode_url)}
+												</span>
+												<span class="truncate text-xs text-base-content/60" title={action.podcast_url}>
+													{action.podcast_title || podcastName(action.podcast_url)}
+												</span>
+											</div>
 										</td>
 										<td>
 											<span class="badge badge-ghost badge-sm">{action.action}</span>

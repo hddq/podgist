@@ -56,7 +56,9 @@ export async function getMe(): Promise<UserInfo> {
 
 export interface EpisodeAction {
 	podcast_url: string;
+	podcast_title?: string;
 	episode_url: string;
+	episode_title?: string;
 	action: string;
 	timestamp: string;
 	started?: number;
@@ -80,7 +82,9 @@ export async function getDashboard(): Promise<DashboardData> {
 
 export interface PlaybackHistoryEntry {
 	podcast_url: string;
+	podcast_title?: string;
 	episode_url: string;
+	episode_title?: string;
 	timestamp: string;
 	position?: number;
 	total?: number;
@@ -95,6 +99,7 @@ export async function getHistory(): Promise<PlaybackHistoryEntry[]> {
 
 export interface Subscription {
 	podcast_url: string;
+	podcast_title?: string;
 	devices: string[];
 }
 

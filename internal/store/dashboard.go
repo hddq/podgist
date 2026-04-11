@@ -29,9 +29,12 @@ func (s *Store) GetDashboardSummary(ctx context.Context, userID int64) (*Dashboa
 
 func (s *Store) GetRecentEpisodeActions(ctx context.Context, userID int64, limit int) ([]domain.EpisodeAction, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT ea.id, ea.user_id, ea.device_id, ea.podcast_url, ea.episode_url,
+		SELECT ea.id, ea.user_id, ea.device_id, ea.podcast_url, COALESCE(p.title, '') AS podcast_title,
+		       ea.episode_url, COALESCE(pe.title, '') AS episode_title,
 		       ea.action, ea.timestamp, ea.started, ea.position, ea.total, ea.created_at
 		FROM episode_actions ea
+		LEFT JOIN podcasts p ON p.url = ea.podcast_url
+		LEFT JOIN podcast_episodes pe ON pe.podcast_id = p.id AND pe.episode_url = ea.episode_url
 		WHERE ea.user_id = $1
 		ORDER BY ea.timestamp DESC
 		LIMIT $2
@@ -44,7 +47,7 @@ func (s *Store) GetRecentEpisodeActions(ctx context.Context, userID int64, limit
 	var actions []domain.EpisodeAction
 	for rows.Next() {
 		var a domain.EpisodeAction
-		if err := rows.Scan(&a.ID, &a.UserID, &a.DeviceID, &a.PodcastURL, &a.EpisodeURL,
+		if err := rows.Scan(&a.ID, &a.UserID, &a.DeviceID, &a.PodcastURL, &a.PodcastTitle, &a.EpisodeURL, &a.EpisodeTitle,
 			&a.Action, &a.Timestamp, &a.Started, &a.Position, &a.Total, &a.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -71,12 +74,21 @@ func (s *Store) GetPlaybackHistory(ctx context.Context, userID int64, limit int)
 				) AS rn
 			FROM episode_actions ea
 			WHERE ea.user_id = $1
-			  AND ea.action = 'play'
+				   AND ea.action = 'play'
 		)
-		SELECT podcast_url, episode_url, device_id, timestamp, position, total
+		SELECT ranked.podcast_url,
+		       COALESCE(p.title, '') AS podcast_title,
+		       ranked.episode_url,
+		       COALESCE(pe.title, '') AS episode_title,
+		       ranked.device_id,
+		       ranked.timestamp,
+		       ranked.position,
+		       ranked.total
 		FROM ranked
+		LEFT JOIN podcasts p ON p.url = ranked.podcast_url
+		LEFT JOIN podcast_episodes pe ON pe.podcast_id = p.id AND pe.episode_url = ranked.episode_url
 		WHERE rn = 1
-		ORDER BY timestamp DESC, created_at DESC, id DESC
+		ORDER BY ranked.timestamp DESC, ranked.created_at DESC, ranked.id DESC
 		LIMIT $2
 	`, userID, limit)
 	if err != nil {
@@ -89,7 +101,9 @@ func (s *Store) GetPlaybackHistory(ctx context.Context, userID int64, limit int)
 		var entry domain.PlaybackHistoryEntry
 		if err := rows.Scan(
 			&entry.PodcastURL,
+			&entry.PodcastTitle,
 			&entry.EpisodeURL,
+			&entry.EpisodeTitle,
 			&entry.DeviceID,
 			&entry.Timestamp,
 			&entry.Position,
@@ -103,17 +117,19 @@ func (s *Store) GetPlaybackHistory(ctx context.Context, userID int64, limit int)
 }
 
 type AggregatedSubscription struct {
-	PodcastURL string   `json:"podcast_url"`
-	Devices    []string `json:"devices"`
+	PodcastURL   string   `json:"podcast_url"`
+	PodcastTitle string   `json:"podcast_title,omitempty"`
+	Devices      []string `json:"devices"`
 }
 
 func (s *Store) GetAggregatedSubscriptions(ctx context.Context, userID int64) ([]AggregatedSubscription, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT sub.podcast_url, array_agg(d.uid ORDER BY d.uid)
+		SELECT sub.podcast_url, COALESCE(p.title, '') AS podcast_title, array_agg(d.uid ORDER BY d.uid)
 		FROM subscriptions sub
 		JOIN devices d ON d.id = sub.device_id
+		LEFT JOIN podcasts p ON p.url = sub.podcast_url
 		WHERE sub.user_id = $1
-		GROUP BY sub.podcast_url
+		GROUP BY sub.podcast_url, p.title
 		ORDER BY sub.podcast_url
 	`, userID)
 	if err != nil {
@@ -124,7 +140,7 @@ func (s *Store) GetAggregatedSubscriptions(ctx context.Context, userID int64) ([
 	var subs []AggregatedSubscription
 	for rows.Next() {
 		var s AggregatedSubscription
-		if err := rows.Scan(&s.PodcastURL, &s.Devices); err != nil {
+		if err := rows.Scan(&s.PodcastURL, &s.PodcastTitle, &s.Devices); err != nil {
 			return nil, err
 		}
 		subs = append(subs, s)

@@ -324,6 +324,14 @@ func seedEpisodeAction(t *testing.T, env *testEnv, action domain.EpisodeAction) 
 	}
 }
 
+func seedPodcastMetadata(t *testing.T, env *testEnv, podcast domain.Podcast, episodes []domain.PodcastEpisodeMetadata) {
+	t.Helper()
+
+	if err := store.New(env.pool).UpsertPodcastWithEpisodes(t.Context(), &podcast, episodes); err != nil {
+		t.Fatalf("failed to seed podcast metadata: %v", err)
+	}
+}
+
 // --- Auth Tests ---
 
 func TestLoginSuccess(t *testing.T) {
@@ -1377,6 +1385,107 @@ func TestDashboardHistoryUsesDeterministicLatestPlayOrdering(t *testing.T) {
 	}
 	if got := history[0]["position"]; got != float64(pos110) {
 		t.Fatalf("expected last inserted play to win tie, got %v", got)
+	}
+}
+
+func TestDashboardEndpointsIncludeMetadataTitles(t *testing.T) {
+	env := setupTestEnv(t)
+	client := dashboardLogin(t, env)
+	userID := testUserID(t, env)
+	deviceID := createDevice(t, env, "named-device")
+
+	podcastURL := "https://example.com/feed.xml"
+	episodeURL := "https://example.com/episodes/1.mp3"
+	now := time.Date(2026, 4, 12, 14, 0, 0, 0, time.UTC)
+	pos180 := 180
+	total300 := 300
+
+	seedPodcastMetadata(t, env, domain.Podcast{
+		URL:           podcastURL,
+		Title:         "Named Podcast",
+		LastFetchedAt: &now,
+	}, []domain.PodcastEpisodeMetadata{{
+		EpisodeURL: episodeURL,
+		Title:      "Named Episode",
+	}})
+
+	if err := store.New(env.pool).AddSubscription(t.Context(), userID, deviceID, podcastURL, now); err != nil {
+		t.Fatalf("failed to seed subscription: %v", err)
+	}
+
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &deviceID,
+		PodcastURL: podcastURL,
+		EpisodeURL: episodeURL,
+		Action:     domain.ActionPlay,
+		Timestamp:  now,
+		Position:   &pos180,
+		Total:      &total300,
+		CreatedAt:  now,
+	})
+
+	resp := env.doRequestWithClient(t, client, http.MethodGet, "/api/podgist/v1/dashboard", nil, false)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected dashboard 200, got %d", resp.StatusCode)
+	}
+
+	var dashboard map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&dashboard); err != nil {
+		t.Fatalf("failed to decode dashboard response: %v", err)
+	}
+
+	recentActions, ok := dashboard["recent_actions"].([]any)
+	if !ok || len(recentActions) != 1 {
+		t.Fatalf("expected one recent action, got %#v", dashboard["recent_actions"])
+	}
+	action, ok := recentActions[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected recent action object, got %T", recentActions[0])
+	}
+	if got := action["podcast_title"]; got != "Named Podcast" {
+		t.Fatalf("expected dashboard podcast_title, got %v", got)
+	}
+	if got := action["episode_title"]; got != "Named Episode" {
+		t.Fatalf("expected dashboard episode_title, got %v", got)
+	}
+
+	resp = env.doRequestWithClient(t, client, http.MethodGet, "/api/podgist/v1/history", nil, false)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected history 200, got %d", resp.StatusCode)
+	}
+
+	var history []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&history); err != nil {
+		t.Fatalf("failed to decode history response: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected one history entry, got %d", len(history))
+	}
+	if got := history[0]["podcast_title"]; got != "Named Podcast" {
+		t.Fatalf("expected history podcast_title, got %v", got)
+	}
+	if got := history[0]["episode_title"]; got != "Named Episode" {
+		t.Fatalf("expected history episode_title, got %v", got)
+	}
+
+	resp = env.doRequestWithClient(t, client, http.MethodGet, "/api/podgist/v1/subscriptions", nil, false)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected subscriptions 200, got %d", resp.StatusCode)
+	}
+
+	var subscriptions []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&subscriptions); err != nil {
+		t.Fatalf("failed to decode subscriptions response: %v", err)
+	}
+	if len(subscriptions) != 1 {
+		t.Fatalf("expected one subscription, got %d", len(subscriptions))
+	}
+	if got := subscriptions[0]["podcast_title"]; got != "Named Podcast" {
+		t.Fatalf("expected subscriptions podcast_title, got %v", got)
 	}
 }
 

@@ -111,26 +111,30 @@ func ValidEpisodeAction(a string) bool {
 }
 
 type EpisodeAction struct {
-	ID         int64
-	UserID     int64
-	DeviceID   *int64
-	PodcastURL string
-	EpisodeURL string
-	Action     EpisodeActionType
-	Timestamp  time.Time
-	Started    *int
-	Position   *int
-	Total      *int
-	CreatedAt  time.Time
+	ID           int64
+	UserID       int64
+	DeviceID     *int64
+	PodcastURL   string
+	PodcastTitle string
+	EpisodeURL   string
+	EpisodeTitle string
+	Action       EpisodeActionType
+	Timestamp    time.Time
+	Started      *int
+	Position     *int
+	Total        *int
+	CreatedAt    time.Time
 }
 
 type PlaybackHistoryEntry struct {
-	PodcastURL string
-	EpisodeURL string
-	DeviceID   *int64
-	Timestamp  time.Time
-	Position   *int
-	Total      *int
+	PodcastURL   string
+	PodcastTitle string
+	EpisodeURL   string
+	EpisodeTitle string
+	DeviceID     *int64
+	Timestamp    time.Time
+	Position     *int
+	Total        *int
 }
 
 type SyncGroup struct {

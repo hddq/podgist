@@ -103,36 +103,42 @@ func (h *DashboardHandlers) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 type episodeActionResponse struct {
-	PodcastURL string `json:"podcast_url"`
-	EpisodeURL string `json:"episode_url"`
-	Action     string `json:"action"`
-	Timestamp  string `json:"timestamp"`
-	Started    *int   `json:"started,omitempty"`
-	Position   *int   `json:"position,omitempty"`
-	Total      *int   `json:"total,omitempty"`
-	DeviceUID  string `json:"device_uid,omitempty"`
+	PodcastURL   string `json:"podcast_url"`
+	PodcastTitle string `json:"podcast_title,omitempty"`
+	EpisodeURL   string `json:"episode_url"`
+	EpisodeTitle string `json:"episode_title,omitempty"`
+	Action       string `json:"action"`
+	Timestamp    string `json:"timestamp"`
+	Started      *int   `json:"started,omitempty"`
+	Position     *int   `json:"position,omitempty"`
+	Total        *int   `json:"total,omitempty"`
+	DeviceUID    string `json:"device_uid,omitempty"`
 }
 
 type playbackHistoryResponse struct {
-	PodcastURL string `json:"podcast_url"`
-	EpisodeURL string `json:"episode_url"`
-	Timestamp  string `json:"timestamp"`
-	Position   *int   `json:"position,omitempty"`
-	Total      *int   `json:"total,omitempty"`
-	DeviceUID  string `json:"device_uid,omitempty"`
+	PodcastURL   string `json:"podcast_url"`
+	PodcastTitle string `json:"podcast_title,omitempty"`
+	EpisodeURL   string `json:"episode_url"`
+	EpisodeTitle string `json:"episode_title,omitempty"`
+	Timestamp    string `json:"timestamp"`
+	Position     *int   `json:"position,omitempty"`
+	Total        *int   `json:"total,omitempty"`
+	DeviceUID    string `json:"device_uid,omitempty"`
 }
 
 func mapActions(actions []domain.EpisodeAction, devices map[int64]string) []episodeActionResponse {
 	out := make([]episodeActionResponse, 0, len(actions))
 	for _, a := range actions {
 		resp := episodeActionResponse{
-			PodcastURL: a.PodcastURL,
-			EpisodeURL: a.EpisodeURL,
-			Action:     string(a.Action),
-			Timestamp:  a.Timestamp.Format(time.RFC3339),
-			Started:    a.Started,
-			Position:   a.Position,
-			Total:      a.Total,
+			PodcastURL:   a.PodcastURL,
+			PodcastTitle: a.PodcastTitle,
+			EpisodeURL:   a.EpisodeURL,
+			EpisodeTitle: a.EpisodeTitle,
+			Action:       string(a.Action),
+			Timestamp:    a.Timestamp.Format(time.RFC3339),
+			Started:      a.Started,
+			Position:     a.Position,
+			Total:        a.Total,
 		}
 		if a.DeviceID != nil {
 			resp.DeviceUID = devices[*a.DeviceID]
@@ -146,11 +152,13 @@ func mapPlaybackHistory(history []domain.PlaybackHistoryEntry, devices map[int64
 	out := make([]playbackHistoryResponse, 0, len(history))
 	for _, entry := range history {
 		resp := playbackHistoryResponse{
-			PodcastURL: entry.PodcastURL,
-			EpisodeURL: entry.EpisodeURL,
-			Timestamp:  entry.Timestamp.Format(time.RFC3339),
-			Position:   entry.Position,
-			Total:      entry.Total,
+			PodcastURL:   entry.PodcastURL,
+			PodcastTitle: entry.PodcastTitle,
+			EpisodeURL:   entry.EpisodeURL,
+			EpisodeTitle: entry.EpisodeTitle,
+			Timestamp:    entry.Timestamp.Format(time.RFC3339),
+			Position:     entry.Position,
+			Total:        entry.Total,
 		}
 		if entry.DeviceID != nil {
 			resp.DeviceUID = devices[*entry.DeviceID]

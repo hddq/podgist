@@ -48,7 +48,7 @@
 		</div>
 	{:else}
 		<div class="flex flex-col gap-3">
-			{#each subs as sub}
+			{#each subs as sub (sub.podcast_url)}
 				<div class="card bg-base-200 shadow-sm">
 					<div class="card-body gap-2 py-4">
 						<a
@@ -58,10 +58,10 @@
 							class="link link-hover text-sm font-medium"
 							title={sub.podcast_url}
 						>
-							{podcastName(sub.podcast_url)}
+							{sub.podcast_title || podcastName(sub.podcast_url)}
 						</a>
 						<div class="flex flex-wrap gap-1">
-							{#each sub.devices as device}
+							{#each sub.devices as device (device)}
 								<span class="badge badge-ghost badge-sm">{device}</span>
 							{/each}
 						</div>

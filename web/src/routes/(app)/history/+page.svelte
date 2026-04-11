@@ -26,6 +26,15 @@
 		}
 	}
 
+	function podcastName(url: string) {
+		try {
+			const u = new URL(url);
+			return u.hostname + u.pathname;
+		} catch {
+			return url;
+		}
+	}
+
 	function formatPosition(entry: PlaybackHistoryEntry) {
 		if (entry.position == null) return '—';
 		const pos = Math.floor(entry.position / 60);
@@ -66,16 +75,16 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each history as entry}
+							{#each history as entry (entry.episode_url)}
 								<tr class="hover">
 									<td class="max-w-48 truncate">
 										<span class="text-sm" title={entry.episode_url}>
-											{episodeName(entry.episode_url)}
+											{entry.episode_title || episodeName(entry.episode_url)}
 										</span>
 									</td>
 									<td class="max-w-36 truncate">
 										<span class="text-sm text-base-content/60" title={entry.podcast_url}>
-											{episodeName(entry.podcast_url)}
+											{entry.podcast_title || podcastName(entry.podcast_url)}
 										</span>
 									</td>
 									<td class="text-sm text-base-content/60">{formatPosition(entry)}</td>
