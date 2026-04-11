@@ -113,6 +113,15 @@ type episodeActionResponse struct {
 	DeviceUID  string `json:"device_uid,omitempty"`
 }
 
+type playbackHistoryResponse struct {
+	PodcastURL string `json:"podcast_url"`
+	EpisodeURL string `json:"episode_url"`
+	Timestamp  string `json:"timestamp"`
+	Position   *int   `json:"position,omitempty"`
+	Total      *int   `json:"total,omitempty"`
+	DeviceUID  string `json:"device_uid,omitempty"`
+}
+
 func mapActions(actions []domain.EpisodeAction, devices map[int64]string) []episodeActionResponse {
 	out := make([]episodeActionResponse, 0, len(actions))
 	for _, a := range actions {
@@ -127,6 +136,24 @@ func mapActions(actions []domain.EpisodeAction, devices map[int64]string) []epis
 		}
 		if a.DeviceID != nil {
 			resp.DeviceUID = devices[*a.DeviceID]
+		}
+		out = append(out, resp)
+	}
+	return out
+}
+
+func mapPlaybackHistory(history []domain.PlaybackHistoryEntry, devices map[int64]string) []playbackHistoryResponse {
+	out := make([]playbackHistoryResponse, 0, len(history))
+	for _, entry := range history {
+		resp := playbackHistoryResponse{
+			PodcastURL: entry.PodcastURL,
+			EpisodeURL: entry.EpisodeURL,
+			Timestamp:  entry.Timestamp.Format(time.RFC3339),
+			Position:   entry.Position,
+			Total:      entry.Total,
+		}
+		if entry.DeviceID != nil {
+			resp.DeviceUID = devices[*entry.DeviceID]
 		}
 		out = append(out, resp)
 	}
@@ -175,7 +202,7 @@ func (h *DashboardHandlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 func (h *DashboardHandlers) History(w http.ResponseWriter, r *http.Request) {
 	user := UserFromContext(r.Context())
 
-	actions, err := h.store.GetRecentEpisodeActions(r.Context(), user.ID, 200)
+	history, err := h.store.GetPlaybackHistory(r.Context(), user.ID, 200)
 	if err != nil {
 		h.logger.Error("history", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -183,7 +210,7 @@ func (h *DashboardHandlers) History(w http.ResponseWriter, r *http.Request) {
 	}
 
 	devMap := h.deviceUIDMap(r.Context(), user.ID)
-	writeJSON(w, http.StatusOK, mapActions(actions, devMap))
+	writeJSON(w, http.StatusOK, mapPlaybackHistory(history, devMap))
 }
 
 func (h *DashboardHandlers) Subscriptions(w http.ResponseWriter, r *http.Request) {

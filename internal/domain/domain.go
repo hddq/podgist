@@ -99,6 +99,15 @@ type EpisodeAction struct {
 	CreatedAt  time.Time
 }
 
+type PlaybackHistoryEntry struct {
+	PodcastURL string
+	EpisodeURL string
+	DeviceID   *int64
+	Timestamp  time.Time
+	Position   *int
+	Total      *int
+}
+
 type SyncGroup struct {
 	ID     int64
 	UserID int64

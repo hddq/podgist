@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hddq/podgist/internal/domain"
 	apphttp "github.com/hddq/podgist/internal/http"
 	"github.com/hddq/podgist/internal/migrations"
 	"github.com/hddq/podgist/internal/service"
@@ -109,7 +111,8 @@ func setupTestEnv(t *testing.T) *testEnv {
 		updatesSvc := service.NewUpdatesService(st)
 
 		handlers := apphttp.NewHandlers(authSvc, subsSvc, epsSvc, devsSvc, syncSvc, settingsSvc, updatesSvc, 5*1024*1024, logger)
-		router := apphttp.NewAPIRouter(authSvc, handlers, "test", logger)
+		dashHandlers := apphttp.NewDashboardHandlers(authSvc, st, logger)
+		router := apphttp.NewRouter(authSvc, handlers, dashHandlers, "test", logger, fs.FS(nil))
 
 		httpTestEnv = &testEnv{
 			server: httptest.NewServer(router),
@@ -202,6 +205,61 @@ func sessionIDCookie(t *testing.T, resp *http.Response) *http.Cookie {
 	}
 	t.Fatal("expected sessionid cookie")
 	return nil
+}
+
+func dashboardLogin(t *testing.T, env *testEnv) *http.Client {
+	t.Helper()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar}
+
+	resp := env.doRequestWithClient(t, client, http.MethodPost, "/api/podgist/v1/login", map[string]string{
+		"username": "testuser",
+		"password": "testpass",
+	}, false)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected dashboard login 200, got %d", resp.StatusCode)
+	}
+	_ = sessionIDCookie(t, resp)
+
+	return client
+}
+
+func testUserID(t *testing.T, env *testEnv) int64 {
+	t.Helper()
+
+	var userID int64
+	if err := env.pool.QueryRow(t.Context(), `SELECT id FROM users WHERE username = 'testuser'`).Scan(&userID); err != nil {
+		t.Fatalf("failed to look up test user: %v", err)
+	}
+	return userID
+}
+
+func createDevice(t *testing.T, env *testEnv, uid string) int64 {
+	t.Helper()
+
+	userID := testUserID(t, env)
+	var deviceID int64
+	if err := env.pool.QueryRow(t.Context(), `
+		INSERT INTO devices (user_id, uid, caption, type)
+		VALUES ($1, $2, '', 'other')
+		RETURNING id
+	`, userID, uid).Scan(&deviceID); err != nil {
+		t.Fatalf("failed to create device %q: %v", uid, err)
+	}
+	return deviceID
+}
+
+func seedEpisodeAction(t *testing.T, env *testEnv, action domain.EpisodeAction) {
+	t.Helper()
+
+	if err := store.New(env.pool).AddEpisodeAction(t.Context(), &action); err != nil {
+		t.Fatalf("failed to seed episode action: %v", err)
+	}
 }
 
 // --- Auth Tests ---
@@ -767,11 +825,207 @@ func TestProtectedEndpointNoAuth(t *testing.T) {
 }
 
 func TestAPIRouterDashboardRouteNotRegistered(t *testing.T) {
+	st := store.New(nil)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	authSvc := service.NewAuthService(st, 4)
+	subsSvc := service.NewSubscriptionService(st)
+	epsSvc := service.NewEpisodeService(st, 500)
+	devsSvc := service.NewDeviceService(st)
+	syncSvc := service.NewSyncService(st)
+	settingsSvc := service.NewSettingsService(st)
+	updatesSvc := service.NewUpdatesService(st)
+	handlers := apphttp.NewHandlers(authSvc, subsSvc, epsSvc, devsSvc, syncSvc, settingsSvc, updatesSvc, 5*1024*1024, logger)
+	router := apphttp.NewAPIRouter(authSvc, handlers, "test", logger)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/podgist/v1/dashboard", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestDashboardHistoryAggregatesPlaybackByEpisode(t *testing.T) {
 	env := setupTestEnv(t)
-	resp := env.doRequest(t, "GET", "/api/podgist/v1/dashboard", nil, false)
+	client := dashboardLogin(t, env)
+	userID := testUserID(t, env)
+	dev1ID := createDevice(t, env, "dev-1")
+	dev2ID := createDevice(t, env, "dev-2")
+
+	base := time.Date(2026, 4, 11, 10, 0, 0, 0, time.UTC)
+	pos30 := 30
+	pos120 := 120
+	pos180 := 180
+	total300 := 300
+
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &dev1ID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/episodes/1.mp3",
+		Action:     domain.ActionPlay,
+		Timestamp:  base,
+		Position:   &pos30,
+		Total:      &total300,
+		CreatedAt:  base,
+	})
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &dev1ID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/episodes/1.mp3",
+		Action:     domain.ActionDownload,
+		Timestamp:  base.Add(2 * time.Minute),
+		Position:   &pos30,
+		Total:      &total300,
+		CreatedAt:  base.Add(2 * time.Minute),
+	})
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &dev2ID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/episodes/1.mp3",
+		Action:     domain.ActionPlay,
+		Timestamp:  base.Add(4 * time.Minute),
+		Position:   &pos180,
+		Total:      &total300,
+		CreatedAt:  base.Add(4 * time.Minute),
+	})
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &dev1ID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/episodes/2.mp3",
+		Action:     domain.ActionDownload,
+		Timestamp:  base.Add(5 * time.Minute),
+		Position:   &pos120,
+		Total:      &total300,
+		CreatedAt:  base.Add(5 * time.Minute),
+	})
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &dev1ID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/episodes/3.mp3",
+		Action:     domain.ActionPlay,
+		Timestamp:  base.Add(3 * time.Minute),
+		Position:   &pos120,
+		Total:      &total300,
+		CreatedAt:  base.Add(3 * time.Minute),
+	})
+
+	resp := env.doRequestWithClient(t, client, http.MethodGet, "/api/podgist/v1/history", nil, false)
 	defer resp.Body.Close()
-	if resp.StatusCode != 404 {
-		t.Errorf("expected 404, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var history []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&history); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 history entries, got %d", len(history))
+	}
+
+	if _, ok := history[0]["action"]; ok {
+		t.Fatal("did not expect action field in playback history response")
+	}
+
+	if got := history[0]["episode_url"]; got != "https://example.com/episodes/1.mp3" {
+		t.Fatalf("expected latest played episode first, got %v", got)
+	}
+	if got := history[0]["device_uid"]; got != "dev-2" {
+		t.Fatalf("expected latest playback device dev-2, got %v", got)
+	}
+	if got := history[0]["position"]; got != float64(pos180) {
+		t.Fatalf("expected latest playback position %d, got %v", pos180, got)
+	}
+	if got := history[0]["total"]; got != float64(total300) {
+		t.Fatalf("expected total %d, got %v", total300, got)
+	}
+	gotTimestamp, ok := history[0]["timestamp"].(string)
+	if !ok {
+		t.Fatalf("expected timestamp string, got %T", history[0]["timestamp"])
+	}
+	parsedTimestamp, err := time.Parse(time.RFC3339, gotTimestamp)
+	if err != nil {
+		t.Fatalf("failed to parse timestamp %q: %v", gotTimestamp, err)
+	}
+	if !parsedTimestamp.Equal(base.Add(4 * time.Minute)) {
+		t.Fatalf("expected latest playback timestamp %s, got %s", base.Add(4*time.Minute).Format(time.RFC3339), gotTimestamp)
+	}
+
+	if got := history[1]["episode_url"]; got != "https://example.com/episodes/3.mp3" {
+		t.Fatalf("expected second distinct played episode, got %v", got)
+	}
+	if got := history[1]["device_uid"]; got != "dev-1" {
+		t.Fatalf("expected device dev-1, got %v", got)
+	}
+}
+
+func TestDashboardHistoryUsesDeterministicLatestPlayOrdering(t *testing.T) {
+	env := setupTestEnv(t)
+	client := dashboardLogin(t, env)
+	userID := testUserID(t, env)
+	devID := createDevice(t, env, "tie-device")
+
+	ts := time.Date(2026, 4, 11, 12, 0, 0, 0, time.UTC)
+	pos10 := 10
+	pos90 := 90
+	pos110 := 110
+	total200 := 200
+
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &devID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/episodes/tie.mp3",
+		Action:     domain.ActionPlay,
+		Timestamp:  ts,
+		Position:   &pos10,
+		Total:      &total200,
+		CreatedAt:  ts,
+	})
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &devID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/episodes/tie.mp3",
+		Action:     domain.ActionPlay,
+		Timestamp:  ts,
+		Position:   &pos90,
+		Total:      &total200,
+		CreatedAt:  ts.Add(time.Minute),
+	})
+	seedEpisodeAction(t, env, domain.EpisodeAction{
+		UserID:     userID,
+		DeviceID:   &devID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/episodes/tie.mp3",
+		Action:     domain.ActionPlay,
+		Timestamp:  ts,
+		Position:   &pos110,
+		Total:      &total200,
+		CreatedAt:  ts.Add(time.Minute),
+	})
+
+	resp := env.doRequestWithClient(t, client, http.MethodGet, "/api/podgist/v1/history", nil, false)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var history []map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&history); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(history))
+	}
+	if got := history[0]["position"]; got != float64(pos110) {
+		t.Fatalf("expected last inserted play to win tie, got %v", got)
 	}
 }
 

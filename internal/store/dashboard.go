@@ -53,6 +53,55 @@ func (s *Store) GetRecentEpisodeActions(ctx context.Context, userID int64, limit
 	return actions, rows.Err()
 }
 
+func (s *Store) GetPlaybackHistory(ctx context.Context, userID int64, limit int) ([]domain.PlaybackHistoryEntry, error) {
+	rows, err := s.pool.Query(ctx, `
+		WITH ranked AS (
+			SELECT
+				ea.podcast_url,
+				ea.episode_url,
+				ea.device_id,
+				ea.timestamp,
+				ea.position,
+				ea.total,
+				ea.created_at,
+				ea.id,
+				row_number() OVER (
+					PARTITION BY ea.podcast_url, ea.episode_url
+					ORDER BY ea.timestamp DESC, ea.created_at DESC, ea.id DESC
+				) AS rn
+			FROM episode_actions ea
+			WHERE ea.user_id = $1
+			  AND ea.action = 'play'
+		)
+		SELECT podcast_url, episode_url, device_id, timestamp, position, total
+		FROM ranked
+		WHERE rn = 1
+		ORDER BY timestamp DESC, created_at DESC, id DESC
+		LIMIT $2
+	`, userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []domain.PlaybackHistoryEntry
+	for rows.Next() {
+		var entry domain.PlaybackHistoryEntry
+		if err := rows.Scan(
+			&entry.PodcastURL,
+			&entry.EpisodeURL,
+			&entry.DeviceID,
+			&entry.Timestamp,
+			&entry.Position,
+			&entry.Total,
+		); err != nil {
+			return nil, err
+		}
+		history = append(history, entry)
+	}
+	return history, rows.Err()
+}
+
 type AggregatedSubscription struct {
 	PodcastURL string   `json:"podcast_url"`
 	Devices    []string `json:"devices"`

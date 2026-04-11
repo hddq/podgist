@@ -78,7 +78,16 @@ export async function getDashboard(): Promise<DashboardData> {
 
 // --- History ---
 
-export async function getHistory(): Promise<EpisodeAction[]> {
+export interface PlaybackHistoryEntry {
+	podcast_url: string;
+	episode_url: string;
+	timestamp: string;
+	position?: number;
+	total?: number;
+	device_uid?: string;
+}
+
+export async function getHistory(): Promise<PlaybackHistoryEntry[]> {
 	return request('/history');
 }
 

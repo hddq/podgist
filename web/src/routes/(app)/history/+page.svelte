@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { getHistory, type EpisodeAction } from '$lib/api';
+	import { getHistory, type PlaybackHistoryEntry } from '$lib/api';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 
-	let actions = $state<EpisodeAction[]>([]);
+	let history = $state<PlaybackHistoryEntry[]>([]);
 	let error = $state('');
 	let loading = $state(true);
 
 	$effect(() => {
 		getHistory()
-			.then((d) => (actions = d))
+			.then((d) => (history = d))
 			.catch(() => (error = 'Failed to load playback history.'))
 			.finally(() => (loading = false));
 	});
@@ -26,10 +26,10 @@
 		}
 	}
 
-	function formatPosition(action: EpisodeAction) {
-		if (action.position == null) return '—';
-		const pos = Math.floor(action.position / 60);
-		const total = action.total ? Math.floor(action.total / 60) : null;
+	function formatPosition(entry: PlaybackHistoryEntry) {
+		if (entry.position == null) return '—';
+		const pos = Math.floor(entry.position / 60);
+		const total = entry.total ? Math.floor(entry.total / 60) : null;
 		return total ? `${pos}m / ${total}m` : `${pos}m`;
 	}
 </script>
@@ -45,7 +45,7 @@
 		<LoadingSpinner />
 	{:else if error}
 		<ErrorAlert message={error} />
-	{:else if actions.length === 0}
+	{:else if history.length === 0}
 		<div class="card bg-base-200 shadow">
 			<div class="card-body">
 				<p class="text-base-content/60">No playback history yet.</p>
@@ -60,31 +60,27 @@
 							<tr>
 								<th>Episode</th>
 								<th>Podcast</th>
-								<th>Action</th>
 								<th>Progress</th>
 								<th>Device</th>
 								<th>Time</th>
 							</tr>
 						</thead>
 						<tbody>
-							{#each actions as action}
+							{#each history as entry}
 								<tr class="hover">
 									<td class="max-w-48 truncate">
-										<span class="text-sm" title={action.episode_url}>
-											{episodeName(action.episode_url)}
+										<span class="text-sm" title={entry.episode_url}>
+											{episodeName(entry.episode_url)}
 										</span>
 									</td>
 									<td class="max-w-36 truncate">
-										<span class="text-sm text-base-content/60" title={action.podcast_url}>
-											{episodeName(action.podcast_url)}
+										<span class="text-sm text-base-content/60" title={entry.podcast_url}>
+											{episodeName(entry.podcast_url)}
 										</span>
 									</td>
-									<td>
-										<span class="badge badge-ghost badge-sm">{action.action}</span>
-									</td>
-									<td class="text-sm text-base-content/60">{formatPosition(action)}</td>
-									<td class="text-sm text-base-content/60">{action.device_uid || '—'}</td>
-									<td class="text-sm text-base-content/60">{formatTimestamp(action.timestamp)}</td>
+									<td class="text-sm text-base-content/60">{formatPosition(entry)}</td>
+									<td class="text-sm text-base-content/60">{entry.device_uid || '—'}</td>
+									<td class="text-sm text-base-content/60">{formatTimestamp(entry.timestamp)}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -92,6 +88,6 @@
 				</div>
 			</div>
 		</div>
-		<p class="text-sm text-base-content/40">Showing last {actions.length} actions</p>
+		<p class="text-sm text-base-content/40">Showing last {history.length} episodes</p>
 	{/if}
 </div>
