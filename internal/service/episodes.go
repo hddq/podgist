@@ -12,10 +12,11 @@ import (
 type EpisodeService struct {
 	store             *store.Store
 	maxEpisodeActions int
+	metadata          *PodcastMetadataService
 }
 
-func NewEpisodeService(s *store.Store, maxActions int) *EpisodeService {
-	return &EpisodeService{store: s, maxEpisodeActions: maxActions}
+func NewEpisodeService(s *store.Store, maxActions int, metadata *PodcastMetadataService) *EpisodeService {
+	return &EpisodeService{store: s, maxEpisodeActions: maxActions, metadata: metadata}
 }
 
 type EpisodeActionInput struct {
@@ -107,6 +108,9 @@ func (s *EpisodeService) UploadActions(ctx context.Context, userID int64, action
 
 		if err := s.store.AddEpisodeAction(ctx, ea); err != nil {
 			return nil, err
+		}
+		if s.metadata != nil {
+			s.metadata.ScheduleRefreshIfEpisodeMissing(ctx, podcastURL, episodeURL)
 		}
 	}
 

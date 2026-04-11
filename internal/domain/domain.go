@@ -46,8 +46,33 @@ type Device struct {
 }
 
 type Podcast struct {
-	ID  int64
-	URL string
+	ID            int64
+	URL           string
+	Title         string
+	Description   string
+	Author        string
+	SiteURL       string
+	ImageURL      string
+	ETag          string
+	LastModified  string
+	LastFetchedAt *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type PodcastEpisodeMetadata struct {
+	ID              int64
+	PodcastID       int64
+	EpisodeURL      string
+	GUID            string
+	Title           string
+	Description     string
+	PublishedAt     *time.Time
+	DurationSeconds *int
+	MIMEType        string
+	ByteSize        *int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type Subscription struct {

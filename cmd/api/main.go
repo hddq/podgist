@@ -74,8 +74,9 @@ func runServe(args []string) error {
 	st := store.New(pool)
 
 	authSvc := service.NewAuthService(st, cfg.Auth.BcryptCost)
-	subsSvc := service.NewSubscriptionService(st)
-	epsSvc := service.NewEpisodeService(st, cfg.API.MaxEpisodeActions)
+	metadataSvc := service.NewPodcastMetadataService(st, logger)
+	subsSvc := service.NewSubscriptionService(st, metadataSvc)
+	epsSvc := service.NewEpisodeService(st, cfg.API.MaxEpisodeActions, metadataSvc)
 	devsSvc := service.NewDeviceService(st)
 	syncSvc := service.NewSyncService(st)
 	settingsSvc := service.NewSettingsService(st)

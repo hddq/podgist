@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -103,8 +104,9 @@ func setupTestEnv(t *testing.T) *testEnv {
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 		authSvc := service.NewAuthService(st, 4)
-		subsSvc := service.NewSubscriptionService(st)
-		epsSvc := service.NewEpisodeService(st, 500)
+		metadataSvc := service.NewPodcastMetadataServiceWithClient(st, logger, &http.Client{Timeout: time.Second}, time.Second, 2*time.Hour)
+		subsSvc := service.NewSubscriptionService(st, metadataSvc)
+		epsSvc := service.NewEpisodeService(st, 500, metadataSvc)
 		devsSvc := service.NewDeviceService(st)
 		syncSvc := service.NewSyncService(st)
 		settingsSvc := service.NewSettingsService(st)
@@ -136,6 +138,8 @@ func resetTestData(t *testing.T, env *testEnv) {
 	if _, err := env.pool.Exec(ctx, `
 		TRUNCATE TABLE
 			settings,
+			podcast_episodes,
+			podcasts,
 			sync_group_members,
 			sync_groups,
 			episode_actions,
@@ -194,6 +198,64 @@ func readBody(t *testing.T, resp *http.Response) map[string]any {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	return result
+}
+
+func eventually(t *testing.T, timeout time.Duration, fn func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("condition not met before timeout")
+}
+
+func podcastMetadataRow(t *testing.T, env *testEnv, podcastURL string) (title, etag, lastModified string, fetchedAt *time.Time, ok bool) {
+	t.Helper()
+
+	var ts *time.Time
+	err := env.pool.QueryRow(t.Context(), `
+		SELECT title, etag, last_modified, last_fetched_at
+		FROM podcasts
+		WHERE url = $1
+	`, podcastURL).Scan(&title, &etag, &lastModified, &ts)
+	if err != nil {
+		return "", "", "", nil, false
+	}
+	return title, etag, lastModified, ts, true
+}
+
+func podcastEpisodeCount(t *testing.T, env *testEnv, podcastURL string) int {
+	t.Helper()
+
+	var count int
+	if err := env.pool.QueryRow(t.Context(), `
+		SELECT COUNT(*)
+		FROM podcast_episodes pe
+		JOIN podcasts p ON p.id = pe.podcast_id
+		WHERE p.url = $1
+	`, podcastURL).Scan(&count); err != nil {
+		t.Fatalf("failed to count podcast episodes: %v", err)
+	}
+	return count
+}
+
+func podcastEpisodeTitle(t *testing.T, env *testEnv, podcastURL, episodeURL string) string {
+	t.Helper()
+
+	var title string
+	if err := env.pool.QueryRow(t.Context(), `
+		SELECT pe.title
+		FROM podcast_episodes pe
+		JOIN podcasts p ON p.id = pe.podcast_id
+		WHERE p.url = $1 AND pe.episode_url = $2
+	`, podcastURL, episodeURL).Scan(&title); err != nil {
+		t.Fatalf("failed to load episode title: %v", err)
+	}
+	return title
 }
 
 func sessionIDCookie(t *testing.T, resp *http.Response) *http.Cookie {
@@ -828,8 +890,9 @@ func TestAPIRouterDashboardRouteNotRegistered(t *testing.T) {
 	st := store.New(nil)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	authSvc := service.NewAuthService(st, 4)
-	subsSvc := service.NewSubscriptionService(st)
-	epsSvc := service.NewEpisodeService(st, 500)
+	metadataSvc := service.NewPodcastMetadataServiceWithClient(st, logger, &http.Client{Timeout: time.Second}, time.Second, 2*time.Hour)
+	subsSvc := service.NewSubscriptionService(st, metadataSvc)
+	epsSvc := service.NewEpisodeService(st, 500, metadataSvc)
 	devsSvc := service.NewDeviceService(st)
 	syncSvc := service.NewSyncService(st)
 	settingsSvc := service.NewSettingsService(st)
@@ -843,6 +906,294 @@ func TestAPIRouterDashboardRouteNotRegistered(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestSubscriptionFetchesPodcastMetadataAsync(t *testing.T) {
+	env := setupTestEnv(t)
+
+	const episodeURL = "https://cdn.example.com/show/ep-1.mp3"
+
+	feedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"feed-v1"`)
+		w.Header().Set("Last-Modified", "Sat, 12 Apr 2026 10:00:00 GMT")
+		w.Header().Set("Content-Type", "application/rss+xml")
+		io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+  <channel>
+    <title>Async Podcast</title>
+    <description>Metadata test feed</description>
+    <link>https://example.com/show</link>
+    <itunes:author>Podgist</itunes:author>
+    <itunes:image href="https://example.com/show.jpg"></itunes:image>
+    <item>
+      <title>Episode One</title>
+      <description>First episode</description>
+      <guid>ep-1</guid>
+      <pubDate>Sat, 12 Apr 2026 09:00:00 +0000</pubDate>
+      <itunes:duration>01:02:03</itunes:duration>
+      <enclosure url="`+episodeURL+`" type="audio/mpeg" length="12345"></enclosure>
+    </item>
+  </channel>
+</rss>`)
+	}))
+	defer feedServer.Close()
+
+	resp := env.doRequest(t, http.MethodPost, "/api/2/subscriptions/testuser/dev1.json", map[string]any{
+		"add":    []string{feedServer.URL},
+		"remove": []string{},
+	}, true)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	eventually(t, 3*time.Second, func() bool {
+		title, _, _, fetchedAt, ok := podcastMetadataRow(t, env, feedServer.URL)
+		return ok && title == "Async Podcast" && fetchedAt != nil && podcastEpisodeCount(t, env, feedServer.URL) == 1
+	})
+
+	title, etag, lastModified, fetchedAt, ok := podcastMetadataRow(t, env, feedServer.URL)
+	if !ok {
+		t.Fatal("expected podcast metadata row")
+	}
+	if title != "Async Podcast" {
+		t.Fatalf("expected title Async Podcast, got %q", title)
+	}
+	if etag != `"feed-v1"` {
+		t.Fatalf("expected etag %q, got %q", `"feed-v1"`, etag)
+	}
+	if lastModified != "Sat, 12 Apr 2026 10:00:00 GMT" {
+		t.Fatalf("expected last modified to be stored, got %q", lastModified)
+	}
+	if fetchedAt == nil {
+		t.Fatal("expected last_fetched_at to be set")
+	}
+	if got := podcastEpisodeTitle(t, env, feedServer.URL, episodeURL); got != "Episode One" {
+		t.Fatalf("expected episode title Episode One, got %q", got)
+	}
+}
+
+func TestEpisodeMetadataRefreshHonorsCooldownAndUsesConditionalGet(t *testing.T) {
+	env := setupTestEnv(t)
+
+	var (
+		mu          sync.Mutex
+		requests    int
+		feedVersion = 1
+	)
+
+	feedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		version := feedVersion
+		mu.Unlock()
+
+		if version == 2 && r.Header.Get("If-None-Match") == `"feed-v1"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+
+		w.Header().Set("ETag", fmt.Sprintf(`"feed-v%d"`, version))
+		w.Header().Set("Last-Modified", "Sat, 12 Apr 2026 10:00:00 GMT")
+		w.Header().Set("Content-Type", "application/rss+xml")
+
+		extraEpisode := ""
+		if version >= 3 {
+			extraEpisode = `
+    <item>
+      <title>Episode Two</title>
+      <description>Second episode</description>
+      <guid>ep-2</guid>
+      <pubDate>Sat, 12 Apr 2026 11:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example.com/show/ep-2.mp3" type="audio/mpeg" length="45678"></enclosure>
+    </item>`
+		}
+
+		io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Refresh Podcast</title>
+    <description>Conditional GET feed</description>
+    <link>https://example.com/refresh</link>
+    <item>
+      <title>Episode One</title>
+      <description>First episode</description>
+      <guid>ep-1</guid>
+      <pubDate>Sat, 12 Apr 2026 09:00:00 +0000</pubDate>
+      <enclosure url="https://cdn.example.com/show/ep-1.mp3" type="audio/mpeg" length="12345"></enclosure>
+    </item>`+extraEpisode+`
+  </channel>
+</rss>`)
+	}))
+	defer feedServer.Close()
+
+	resp := env.doRequest(t, http.MethodPost, "/api/2/subscriptions/testuser/dev1.json", map[string]any{
+		"add":    []string{feedServer.URL},
+		"remove": []string{},
+	}, true)
+	resp.Body.Close()
+
+	eventually(t, 3*time.Second, func() bool {
+		return podcastEpisodeCount(t, env, feedServer.URL) == 1
+	})
+
+	mu.Lock()
+	if requests != 1 {
+		t.Fatalf("expected initial fetch count 1, got %d", requests)
+	}
+	mu.Unlock()
+
+	resp = env.doRequest(t, http.MethodPost, "/api/2/episodes/testuser.json", []map[string]any{{
+		"podcast":   feedServer.URL,
+		"episode":   "https://cdn.example.com/show/ep-2.mp3",
+		"action":    "play",
+		"timestamp": "2026-04-12T12:00:00Z",
+	}}, true)
+	resp.Body.Close()
+
+	time.Sleep(250 * time.Millisecond)
+
+	mu.Lock()
+	if requests != 1 {
+		t.Fatalf("expected no fetch inside cooldown, got %d requests", requests)
+	}
+	mu.Unlock()
+
+	title, etag, lastModified, before304, ok := podcastMetadataRow(t, env, feedServer.URL)
+	if !ok || before304 == nil {
+		t.Fatal("expected stored podcast metadata before conditional refresh")
+	}
+	if title != "Refresh Podcast" || etag != `"feed-v1"` || lastModified == "" {
+		t.Fatal("expected initial metadata to be stored before refresh test")
+	}
+
+	if _, err := env.pool.Exec(t.Context(), `
+		UPDATE podcasts
+		SET last_fetched_at = $2
+		WHERE url = $1
+	`, feedServer.URL, time.Now().UTC().Add(-3*time.Hour)); err != nil {
+		t.Fatalf("failed to age last_fetched_at: %v", err)
+	}
+
+	mu.Lock()
+	feedVersion = 2
+	mu.Unlock()
+
+	resp = env.doRequest(t, http.MethodPost, "/api/2/episodes/testuser.json", []map[string]any{{
+		"podcast":   feedServer.URL,
+		"episode":   "https://cdn.example.com/show/ep-2.mp3",
+		"action":    "play",
+		"timestamp": "2026-04-12T12:05:00Z",
+	}}, true)
+	resp.Body.Close()
+
+	eventually(t, 3*time.Second, func() bool {
+		_, _, _, fetchedAt, ok := podcastMetadataRow(t, env, feedServer.URL)
+		if !ok || fetchedAt == nil {
+			return false
+		}
+		return fetchedAt.After(*before304)
+	})
+
+	mu.Lock()
+	if requests != 2 {
+		t.Fatalf("expected one conditional fetch, got %d requests", requests)
+	}
+	mu.Unlock()
+
+	if podcastEpisodeCount(t, env, feedServer.URL) != 1 {
+		t.Fatal("expected 304 refresh not to add new episodes")
+	}
+
+	if _, err := env.pool.Exec(t.Context(), `
+		UPDATE podcasts
+		SET last_fetched_at = $2
+		WHERE url = $1
+	`, feedServer.URL, time.Now().UTC().Add(-3*time.Hour)); err != nil {
+		t.Fatalf("failed to age last_fetched_at for 200 refresh: %v", err)
+	}
+
+	mu.Lock()
+	feedVersion = 3
+	mu.Unlock()
+
+	resp = env.doRequest(t, http.MethodPost, "/api/2/episodes/testuser.json", []map[string]any{{
+		"podcast":   feedServer.URL,
+		"episode":   "https://cdn.example.com/show/ep-2.mp3",
+		"action":    "play",
+		"timestamp": "2026-04-12T12:10:00Z",
+	}}, true)
+	resp.Body.Close()
+
+	eventually(t, 3*time.Second, func() bool {
+		return podcastEpisodeCount(t, env, feedServer.URL) == 2
+	})
+
+	mu.Lock()
+	if requests != 3 {
+		t.Fatalf("expected third request after cooldown expiry, got %d", requests)
+	}
+	mu.Unlock()
+
+	if got := podcastEpisodeTitle(t, env, feedServer.URL, "https://cdn.example.com/show/ep-2.mp3"); got != "Episode Two" {
+		t.Fatalf("expected refreshed episode title Episode Two, got %q", got)
+	}
+}
+
+func TestEpisodeMetadataFetchUsesSingleflightPerPodcast(t *testing.T) {
+	env := setupTestEnv(t)
+
+	var (
+		mu       sync.Mutex
+		requests int
+	)
+
+	feedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+
+		time.Sleep(150 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/rss+xml")
+		io.WriteString(w, `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Singleflight Podcast</title>
+    <description>Burst test feed</description>
+    <link>https://example.com/singleflight</link>
+    <item>
+      <title>Episode One</title>
+      <guid>ep-1</guid>
+      <enclosure url="https://cdn.example.com/show/ep-1.mp3" type="audio/mpeg" length="12345"></enclosure>
+    </item>
+  </channel>
+</rss>`)
+	}))
+	defer feedServer.Close()
+
+	actions := make([]map[string]any, 0, 10)
+	for i := 0; i < 10; i++ {
+		actions = append(actions, map[string]any{
+			"podcast":   feedServer.URL,
+			"episode":   fmt.Sprintf("https://cdn.example.com/show/missing-%d.mp3", i),
+			"action":    "play",
+			"timestamp": "2026-04-12T13:00:00Z",
+		})
+	}
+
+	resp := env.doRequest(t, http.MethodPost, "/api/2/episodes/testuser.json", actions, true)
+	resp.Body.Close()
+
+	eventually(t, 3*time.Second, func() bool {
+		title, _, _, fetchedAt, ok := podcastMetadataRow(t, env, feedServer.URL)
+		return ok && title == "Singleflight Podcast" && fetchedAt != nil
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if requests != 1 {
+		t.Fatalf("expected single feed request for burst upload, got %d", requests)
 	}
 }
 

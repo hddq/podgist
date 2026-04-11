@@ -11,11 +11,12 @@ import (
 )
 
 type SubscriptionService struct {
-	store *store.Store
+	store    *store.Store
+	metadata *PodcastMetadataService
 }
 
-func NewSubscriptionService(s *store.Store) *SubscriptionService {
-	return &SubscriptionService{store: s}
+func NewSubscriptionService(s *store.Store, metadata *PodcastMetadataService) *SubscriptionService {
+	return &SubscriptionService{store: s, metadata: metadata}
 }
 
 type SubscriptionChange struct {
@@ -86,6 +87,9 @@ func (s *SubscriptionService) UpdateSubscriptions(ctx context.Context, userID, d
 		}
 		if err := s.store.AddSubscription(ctx, userID, deviceID, normalized, now); err != nil {
 			return nil, err
+		}
+		if s.metadata != nil {
+			s.metadata.ScheduleFetch(ctx, normalized)
 		}
 	}
 
