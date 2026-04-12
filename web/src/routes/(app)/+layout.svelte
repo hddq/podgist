@@ -62,7 +62,7 @@
 		<!-- Drawer side -->
 		<div class="drawer-side h-dvh">
 			<label for="main-drawer" aria-label="Close menu" class="drawer-overlay"></label>
-			<div class="flex h-full w-72 flex-col overflow-hidden bg-base-200">
+			<div class="flex h-full w-fit min-w-max flex-col overflow-hidden bg-base-200">
 				<Sidebar />
 				<div class="mt-auto p-4">
 					{#if auth.user}
