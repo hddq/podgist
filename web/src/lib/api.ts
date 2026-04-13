@@ -122,6 +122,27 @@ export async function getDevices(): Promise<Device[]> {
 	return request('/devices');
 }
 
+export interface SyncStatus {
+	synchronized: string[][];
+	'not-synchronized': string[];
+}
+
+export interface SyncUpdateRequest {
+	synchronize: string[][];
+	'stop-synchronize': string[];
+}
+
+export async function getSyncDevices(): Promise<SyncStatus> {
+	return request('/sync-devices');
+}
+
+export async function updateSyncDevices(payload: SyncUpdateRequest): Promise<SyncStatus> {
+	return request('/sync-devices', {
+		method: 'POST',
+		body: JSON.stringify(payload)
+	});
+}
+
 // --- Account ---
 
 export interface AccountData {

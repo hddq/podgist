@@ -83,7 +83,7 @@ func runServe(args []string) error {
 	updatesSvc := service.NewUpdatesService(st)
 
 	handlers := apphttp.NewHandlers(authSvc, subsSvc, epsSvc, devsSvc, syncSvc, settingsSvc, updatesSvc, cfg.API.MaxRequestSize, logger)
-	dashHandlers := apphttp.NewDashboardHandlers(authSvc, st, logger)
+	dashHandlers := apphttp.NewDashboardHandlers(authSvc, st, syncSvc, logger)
 
 	var webFS fs.FS
 	if sub, err := fs.Sub(webui.Assets, "dist"); err == nil {

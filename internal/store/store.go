@@ -190,34 +190,58 @@ func (s *Store) GetDeviceByID(ctx context.Context, id int64) (*domain.Device, er
 // --- Subscriptions ---
 
 func (s *Store) AddSubscription(ctx context.Context, userID, deviceID int64, podcastURL string, now time.Time) error {
-	_, err := s.pool.Exec(ctx,
-		`INSERT INTO subscriptions (user_id, device_id, podcast_url) VALUES ($1, $2, $3)
-		 ON CONFLICT (user_id, device_id, podcast_url) DO NOTHING`,
-		userID, deviceID, podcastURL,
-	)
-	if err != nil {
-		return err
-	}
-	_, err = s.pool.Exec(ctx,
-		`INSERT INTO subscription_events (user_id, device_id, podcast_url, action, created_at) VALUES ($1, $2, $3, 'subscribe', $4)`,
-		userID, deviceID, podcastURL, now,
-	)
-	return err
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		deviceIDs, err := s.syncTargetDeviceIDsTx(ctx, tx, userID, deviceID)
+		if err != nil {
+			return err
+		}
+
+		for _, targetID := range deviceIDs {
+			_, err := tx.Exec(ctx,
+				`INSERT INTO subscriptions (user_id, device_id, podcast_url) VALUES ($1, $2, $3)
+				 ON CONFLICT (user_id, device_id, podcast_url) DO NOTHING`,
+				userID, targetID, podcastURL,
+			)
+			if err != nil {
+				return err
+			}
+			_, err = tx.Exec(ctx,
+				`INSERT INTO subscription_events (user_id, device_id, podcast_url, action, created_at) VALUES ($1, $2, $3, 'subscribe', $4)`,
+				userID, targetID, podcastURL, now,
+			)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) RemoveSubscription(ctx context.Context, userID, deviceID int64, podcastURL string, now time.Time) error {
-	_, err := s.pool.Exec(ctx,
-		`DELETE FROM subscriptions WHERE user_id = $1 AND device_id = $2 AND podcast_url = $3`,
-		userID, deviceID, podcastURL,
-	)
-	if err != nil {
-		return err
-	}
-	_, err = s.pool.Exec(ctx,
-		`INSERT INTO subscription_events (user_id, device_id, podcast_url, action, created_at) VALUES ($1, $2, $3, 'unsubscribe', $4)`,
-		userID, deviceID, podcastURL, now,
-	)
-	return err
+	return s.WithTx(ctx, func(tx pgx.Tx) error {
+		deviceIDs, err := s.syncTargetDeviceIDsTx(ctx, tx, userID, deviceID)
+		if err != nil {
+			return err
+		}
+
+		for _, targetID := range deviceIDs {
+			_, err := tx.Exec(ctx,
+				`DELETE FROM subscriptions WHERE user_id = $1 AND device_id = $2 AND podcast_url = $3`,
+				userID, targetID, podcastURL,
+			)
+			if err != nil {
+				return err
+			}
+			_, err = tx.Exec(ctx,
+				`INSERT INTO subscription_events (user_id, device_id, podcast_url, action, created_at) VALUES ($1, $2, $3, 'unsubscribe', $4)`,
+				userID, targetID, podcastURL, now,
+			)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) GetSubscriptionsSince(ctx context.Context, userID, deviceID int64, since time.Time) (add, remove []string, err error) {
@@ -350,22 +374,32 @@ func (s *Store) GetSyncStatus(ctx context.Context, userID int64) (synced [][]str
 	defer rows.Close()
 
 	groupMap := make(map[int64][]string)
-	syncedDevices := make(map[string]bool)
+	groupOrder := make([]int64, 0)
 	for rows.Next() {
 		var uid string
 		var groupID int64
 		if err := rows.Scan(&uid, &groupID); err != nil {
 			return nil, nil, err
 		}
+		if _, ok := groupMap[groupID]; !ok {
+			groupOrder = append(groupOrder, groupID)
+		}
 		groupMap[groupID] = append(groupMap[groupID], uid)
-		syncedDevices[uid] = true
 	}
 	if err := rows.Err(); err != nil {
 		return nil, nil, err
 	}
 
-	for _, uids := range groupMap {
+	syncedDevices := make(map[string]bool)
+	for _, groupID := range groupOrder {
+		uids := groupMap[groupID]
+		if len(uids) < 2 {
+			continue
+		}
 		synced = append(synced, uids)
+		for _, uid := range uids {
+			syncedDevices[uid] = true
+		}
 	}
 
 	for _, d := range devices {
@@ -405,12 +439,7 @@ func (s *Store) SetSyncGroup(ctx context.Context, userID int64, deviceUIDs []str
 		}
 	}
 
-	// Clean up empty sync groups
-	_, err = tx.Exec(ctx,
-		`DELETE FROM sync_groups WHERE user_id = $1 AND id NOT IN (SELECT sync_group_id FROM sync_group_members)`,
-		userID,
-	)
-	if err != nil {
+	if err := s.cleanupSmallSyncGroupsTx(ctx, tx, userID); err != nil {
 		return err
 	}
 
@@ -430,6 +459,55 @@ func (s *Store) SetSyncGroup(ctx context.Context, userID int64, deviceUIDs []str
 		)
 		if err != nil {
 			return err
+		}
+	}
+
+	// Merge existing subscriptions for all devices in this sync group.
+	merged := make([]string, 0)
+	rows, err := tx.Query(ctx,
+		`SELECT DISTINCT podcast_url
+		 FROM subscriptions
+		 WHERE user_id = $1 AND device_id = ANY($2)
+		 ORDER BY podcast_url`,
+		userID, deviceIDs,
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var podcastURL string
+		if err := rows.Scan(&podcastURL); err != nil {
+			return err
+		}
+		merged = append(merged, podcastURL)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	now := time.Now().UTC()
+	for _, id := range deviceIDs {
+		for _, podcastURL := range merged {
+			cmd, err := tx.Exec(ctx,
+				`INSERT INTO subscriptions (user_id, device_id, podcast_url) VALUES ($1, $2, $3)
+				 ON CONFLICT (user_id, device_id, podcast_url) DO NOTHING`,
+				userID, id, podcastURL,
+			)
+			if err != nil {
+				return err
+			}
+			if cmd.RowsAffected() == 0 {
+				continue
+			}
+			_, err = tx.Exec(ctx,
+				`INSERT INTO subscription_events (user_id, device_id, podcast_url, action, created_at) VALUES ($1, $2, $3, 'subscribe', $4)`,
+				userID, id, podcastURL, now,
+			)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -456,16 +534,81 @@ func (s *Store) StopSync(ctx context.Context, userID int64, uid string) error {
 		return err
 	}
 
-	// Clean up empty sync groups
-	_, err = tx.Exec(ctx,
-		`DELETE FROM sync_groups WHERE user_id = $1 AND id NOT IN (SELECT sync_group_id FROM sync_group_members)`,
+	if err := s.cleanupSmallSyncGroupsTx(ctx, tx, userID); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (s *Store) syncTargetDeviceIDsTx(ctx context.Context, tx pgx.Tx, userID, deviceID int64) ([]int64, error) {
+	rows, err := tx.Query(ctx,
+		`SELECT peer.id
+		 FROM devices base
+		 JOIN sync_group_members base_member ON base_member.device_id = base.id
+		 JOIN sync_group_members peer_member ON peer_member.sync_group_id = base_member.sync_group_id
+		 JOIN devices peer ON peer.id = peer_member.device_id
+		 WHERE base.user_id = $1 AND base.id = $2
+		 ORDER BY peer.id`,
+		userID, deviceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []int64{deviceID}, nil
+	}
+	return ids, nil
+}
+
+func (s *Store) cleanupSmallSyncGroupsTx(ctx context.Context, tx pgx.Tx, userID int64) error {
+	rows, err := tx.Query(ctx,
+		`SELECT sg.id
+		 FROM sync_groups sg
+		 LEFT JOIN sync_group_members sgm ON sgm.sync_group_id = sg.id
+		 WHERE sg.user_id = $1
+		 GROUP BY sg.id
+		 HAVING COUNT(sgm.device_id) < 2`,
 		userID,
 	)
 	if err != nil {
 		return err
 	}
+	defer rows.Close()
 
-	return tx.Commit(ctx)
+	groupIDs := make([]int64, 0)
+	for rows.Next() {
+		var groupID int64
+		if err := rows.Scan(&groupID); err != nil {
+			return err
+		}
+		groupIDs = append(groupIDs, groupID)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(groupIDs) == 0 {
+		return nil
+	}
+
+	if _, err := tx.Exec(ctx, `DELETE FROM sync_group_members WHERE sync_group_id = ANY($1)`, groupIDs); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `DELETE FROM sync_groups WHERE user_id = $1 AND id = ANY($2)`, userID, groupIDs)
+	return err
 }
 
 // --- Settings ---

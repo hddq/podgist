@@ -1,18 +1,34 @@
 <script lang="ts">
-	import { getDevices, type Device } from '$lib/api';
+	import { onMount } from 'svelte';
+	import { getDevices, getSyncDevices, updateSyncDevices, type Device, type SyncStatus } from '$lib/api';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 
 	let devices = $state<Device[]>([]);
+	let syncStatus = $state<SyncStatus>({ synchronized: [], 'not-synchronized': [] });
+	let selectedForSync = $state<string[]>([]);
 	let error = $state('');
+	let actionError = $state('');
 	let loading = $state(true);
+	let saving = $state(false);
 
-	$effect(() => {
-		getDevices()
-			.then((d) => (devices = d))
-			.catch(() => (error = 'Failed to load devices.'))
-			.finally(() => (loading = false));
+	onMount(() => {
+		void loadData();
 	});
+
+	async function loadData() {
+		error = '';
+		loading = true;
+		try {
+			const [d, s] = await Promise.all([getDevices(), getSyncDevices()]);
+			devices = d;
+			syncStatus = s;
+		} catch {
+			error = 'Failed to load devices and sync status.';
+		} finally {
+			loading = false;
+		}
+	}
 
 	function formatDate(ts: string) {
 		return new Date(ts).toLocaleDateString();
@@ -28,6 +44,70 @@
 
 	function deviceBadge(type: string) {
 		return deviceTypeColors[type] ?? 'badge-ghost';
+	}
+
+	function deviceLabel(uid: string) {
+		const device = devices.find((d) => d.uid === uid);
+		if (!device) {
+			return uid;
+		}
+		return device.caption ? `${device.caption} (${uid})` : uid;
+	}
+
+	function syncedDeviceUIDs() {
+		return Array.from(new Set(syncStatus.synchronized.flat()));
+	}
+
+	function toggleSyncSelection(uid: string, checked: boolean) {
+		if (checked) {
+			if (!selectedForSync.includes(uid)) {
+				selectedForSync = [...selectedForSync, uid];
+			}
+			return;
+		}
+		selectedForSync = selectedForSync.filter((currentUID) => currentUID !== uid);
+	}
+
+	async function createOrReplaceSyncGroup() {
+		if (saving || selectedForSync.length < 2) {
+			return;
+		}
+
+		actionError = '';
+		saving = true;
+		try {
+			syncStatus = await updateSyncDevices({
+				synchronize: [selectedForSync],
+				'stop-synchronize': []
+			});
+			devices = await getDevices();
+			selectedForSync = [];
+		} catch (err) {
+			actionError = err instanceof Error && err.message ? err.message : 'Failed to update sync group.';
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function stopSync(uid: string) {
+		if (saving) {
+			return;
+		}
+
+		actionError = '';
+		saving = true;
+		try {
+			syncStatus = await updateSyncDevices({
+				synchronize: [],
+				'stop-synchronize': [uid]
+			});
+			devices = await getDevices();
+			selectedForSync = selectedForSync.filter((currentUID) => currentUID !== uid);
+		} catch (err) {
+			actionError = err instanceof Error && err.message ? err.message : 'Failed to stop synchronization.';
+		} finally {
+			saving = false;
+		}
 	}
 </script>
 
@@ -54,8 +134,101 @@
 			</div>
 		</div>
 	{:else}
+		<div class="card bg-base-200 shadow-sm">
+			<div class="card-body gap-4">
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="text-lg font-semibold">Synchronization</h2>
+					{#if saving}
+						<span class="loading loading-spinner loading-sm text-primary"></span>
+					{/if}
+				</div>
+
+				{#if actionError}
+					<ErrorAlert message={actionError} />
+				{/if}
+
+				{#if devices.length < 2}
+					<p class="text-sm text-base-content/60">Add at least two devices to manage synchronization groups.</p>
+				{:else}
+					<div class="grid gap-4 lg:grid-cols-2">
+						<div class="rounded-lg border border-base-300 p-4">
+							<h3 class="font-medium">Current sync groups</h3>
+							{#if syncStatus.synchronized.length === 0}
+								<p class="mt-2 text-sm text-base-content/60">No synchronized device groups yet.</p>
+							{:else}
+								<div class="mt-3 space-y-2">
+									{#each syncStatus.synchronized as group, i (group.join('|') + '-' + i)}
+										<div class="rounded-md bg-base-100 p-3">
+											<p class="mb-2 text-xs uppercase tracking-wide text-base-content/50">Group {i + 1}</p>
+											<div class="flex flex-wrap gap-2">
+												{#each group as uid (uid)}
+													<span class="badge badge-outline">{deviceLabel(uid)}</span>
+												{/each}
+											</div>
+										</div>
+									{/each}
+								</div>
+							{/if}
+
+							<p class="mt-4 text-xs text-base-content/50">
+								Not synchronized:
+								{syncStatus['not-synchronized'].length === 0
+									? 'none'
+									: syncStatus['not-synchronized'].map((uid) => deviceLabel(uid)).join(', ')}
+							</p>
+						</div>
+
+						<div class="rounded-lg border border-base-300 p-4">
+							<h3 class="font-medium">Group editor</h3>
+							<p class="mt-1 text-sm text-base-content/60">Select two or more devices to create or replace a sync group.</p>
+							<div class="mt-3 space-y-1">
+								{#each devices as device (device.uid)}
+									<label class="label cursor-pointer justify-start gap-3 rounded-md px-2 py-1 hover:bg-base-300/60">
+										<input
+											type="checkbox"
+											class="checkbox checkbox-sm"
+											checked={selectedForSync.includes(device.uid)}
+											onchange={(event) =>
+												toggleSyncSelection(device.uid, (event.currentTarget as HTMLInputElement).checked)}
+											disabled={saving}
+										/>
+										<span class="label-text">{device.caption || device.uid}</span>
+										{#if device.caption}
+											<span class="text-xs text-base-content/50">{device.uid}</span>
+										{/if}
+									</label>
+								{/each}
+							</div>
+							<button
+								class="btn btn-primary btn-sm mt-4"
+								onclick={createOrReplaceSyncGroup}
+								disabled={saving || selectedForSync.length < 2}
+							>
+								Create / replace group
+							</button>
+						</div>
+					</div>
+
+					<div class="rounded-lg border border-base-300 p-4">
+						<h3 class="font-medium">Stop sync per device</h3>
+						{#if syncedDeviceUIDs().length === 0}
+							<p class="mt-2 text-sm text-base-content/60">No devices are currently synchronized.</p>
+						{:else}
+							<div class="mt-3 flex flex-wrap gap-2">
+								{#each syncedDeviceUIDs() as uid (uid)}
+									<button class="btn btn-outline btn-xs" onclick={() => stopSync(uid)} disabled={saving}>
+										Unsync {deviceLabel(uid)}
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+
 		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-			{#each devices as device}
+			{#each devices as device (device.uid)}
 				<div class="card bg-base-200 shadow-sm">
 					<div class="card-body gap-3">
 						<div class="flex items-start justify-between gap-2">

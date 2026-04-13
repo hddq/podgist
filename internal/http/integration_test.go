@@ -113,7 +113,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		updatesSvc := service.NewUpdatesService(st)
 
 		handlers := apphttp.NewHandlers(authSvc, subsSvc, epsSvc, devsSvc, syncSvc, settingsSvc, updatesSvc, 5*1024*1024, logger)
-		dashHandlers := apphttp.NewDashboardHandlers(authSvc, st, logger)
+		dashHandlers := apphttp.NewDashboardHandlers(authSvc, st, syncSvc, logger)
 		router := apphttp.NewRouter(authSvc, handlers, dashHandlers, "test", logger, fs.FS(nil))
 
 		httpTestEnv = &testEnv{
@@ -198,6 +198,47 @@ func readBody(t *testing.T, resp *http.Response) map[string]any {
 		t.Fatalf("failed to decode response: %v", err)
 	}
 	return result
+}
+
+func asStringSlice(t *testing.T, raw any) []string {
+	t.Helper()
+
+	values, ok := raw.([]any)
+	if !ok {
+		t.Fatalf("expected []any, got %T", raw)
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		str, ok := value.(string)
+		if !ok {
+			t.Fatalf("expected string, got %T", value)
+		}
+		out = append(out, str)
+	}
+	return out
+}
+
+func asStringGroups(t *testing.T, raw any) [][]string {
+	t.Helper()
+
+	values, ok := raw.([]any)
+	if !ok {
+		t.Fatalf("expected []any for groups, got %T", raw)
+	}
+	out := make([][]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, asStringSlice(t, value))
+	}
+	return out
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func eventually(t *testing.T, timeout time.Duration, fn func() bool) {
@@ -737,6 +778,148 @@ func TestSyncTooFewDevices(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 400 {
 		t.Errorf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestSyncGroupMergesAndPropagatesSubscriptions(t *testing.T) {
+	env := setupTestEnv(t)
+
+	for _, uid := range []string{"dev1", "dev2"} {
+		resp := env.doRequest(t, "POST", "/api/2/devices/testuser/"+uid+".json", map[string]any{
+			"caption": uid,
+			"type":    "other",
+		}, true)
+		resp.Body.Close()
+	}
+
+	const (
+		feedA = "https://example.com/feeds/a.xml"
+		feedB = "https://example.com/feeds/b.xml"
+		feedC = "https://example.com/feeds/c.xml"
+	)
+
+	resp := env.doRequest(t, "POST", "/api/2/subscriptions/testuser/dev1.json", map[string]any{
+		"add":    []string{feedA},
+		"remove": []string{},
+	}, true)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp = env.doRequest(t, "POST", "/api/2/subscriptions/testuser/dev2.json", map[string]any{
+		"add":    []string{feedB},
+		"remove": []string{},
+	}, true)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp = env.doRequest(t, "POST", "/api/2/sync-devices/testuser.json", map[string]any{
+		"synchronize":      [][]string{{"dev1", "dev2"}},
+		"stop-synchronize": []string{},
+	}, true)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp = env.doRequest(t, "GET", "/api/2/subscriptions/testuser/dev1.json", nil, true)
+	dev1Subs := asStringSlice(t, readBody(t, resp)["add"])
+	if !containsString(dev1Subs, feedA) || !containsString(dev1Subs, feedB) {
+		t.Fatalf("expected dev1 to contain merged subscriptions, got %v", dev1Subs)
+	}
+
+	resp = env.doRequest(t, "GET", "/api/2/subscriptions/testuser/dev2.json", nil, true)
+	dev2Subs := asStringSlice(t, readBody(t, resp)["add"])
+	if !containsString(dev2Subs, feedA) || !containsString(dev2Subs, feedB) {
+		t.Fatalf("expected dev2 to contain merged subscriptions, got %v", dev2Subs)
+	}
+
+	resp = env.doRequest(t, "POST", "/api/2/subscriptions/testuser/dev1.json", map[string]any{
+		"add":    []string{feedC},
+		"remove": []string{},
+	}, true)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp = env.doRequest(t, "GET", "/api/2/subscriptions/testuser/dev2.json", nil, true)
+	dev2Subs = asStringSlice(t, readBody(t, resp)["add"])
+	if !containsString(dev2Subs, feedC) {
+		t.Fatalf("expected dev2 to receive propagated subscription, got %v", dev2Subs)
+	}
+
+	resp = env.doRequest(t, "POST", "/api/2/subscriptions/testuser/dev2.json", map[string]any{
+		"add":    []string{},
+		"remove": []string{feedA},
+	}, true)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	resp = env.doRequest(t, "GET", "/api/2/subscriptions/testuser/dev1.json", nil, true)
+	dev1Subs = asStringSlice(t, readBody(t, resp)["add"])
+	if containsString(dev1Subs, feedA) {
+		t.Fatalf("expected feedA to be removed from dev1 after propagated delete, got %v", dev1Subs)
+	}
+}
+
+func TestDashboardSyncDevicesEndpoint(t *testing.T) {
+	env := setupTestEnv(t)
+	client := dashboardLogin(t, env)
+
+	for _, uid := range []string{"dev1", "dev2"} {
+		resp := env.doRequest(t, "POST", "/api/2/devices/testuser/"+uid+".json", map[string]any{
+			"caption": uid,
+			"type":    "other",
+		}, true)
+		resp.Body.Close()
+	}
+
+	resp := env.doRequestWithClient(t, client, http.MethodGet, "/api/podgist/v1/sync-devices", nil, false)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	initialStatus := readBody(t, resp)
+	initialUnsynced := asStringSlice(t, initialStatus["not-synchronized"])
+	if !containsString(initialUnsynced, "dev1") || !containsString(initialUnsynced, "dev2") {
+		t.Fatalf("expected both devices unsynced initially, got %v", initialUnsynced)
+	}
+
+	resp = env.doRequestWithClient(t, client, http.MethodPost, "/api/podgist/v1/sync-devices", map[string]any{
+		"synchronize":      [][]string{{"dev1", "dev2"}},
+		"stop-synchronize": []string{},
+	}, false)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	syncedStatus := readBody(t, resp)
+	groups := asStringGroups(t, syncedStatus["synchronized"])
+	if len(groups) != 1 || len(groups[0]) != 2 {
+		t.Fatalf("expected one sync group with two devices, got %v", groups)
+	}
+
+	resp = env.doRequestWithClient(t, client, http.MethodPost, "/api/podgist/v1/sync-devices", map[string]any{
+		"synchronize":      [][]string{},
+		"stop-synchronize": []string{"dev1"},
+	}, false)
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	afterStopStatus := readBody(t, resp)
+	if len(asStringGroups(t, afterStopStatus["synchronized"])) != 0 {
+		t.Fatalf("expected no sync groups after stopping one device from a pair, got %v", afterStopStatus["synchronized"])
+	}
+	unsynced := asStringSlice(t, afterStopStatus["not-synchronized"])
+	if !containsString(unsynced, "dev1") || !containsString(unsynced, "dev2") {
+		t.Fatalf("expected both devices to be unsynced after stop, got %v", unsynced)
 	}
 }
 

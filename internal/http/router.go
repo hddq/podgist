@@ -91,6 +91,8 @@ func registerDashboardRoutes(r chi.Router, auth *service.AuthService, dashHandle
 			r.With(sessionMW).Get("/history", dashHandlers.History)
 			r.With(sessionMW).Get("/subscriptions", dashHandlers.Subscriptions)
 			r.With(sessionMW).Get("/devices", dashHandlers.Devices)
+			r.With(sessionMW).Get("/sync-devices", dashHandlers.SyncDevices)
+			r.With(sessionMW).Post("/sync-devices", dashHandlers.SyncDevices)
 			r.With(sessionMW).Get("/account", dashHandlers.Account)
 		})
 	}

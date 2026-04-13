@@ -14,11 +14,12 @@ import (
 type DashboardHandlers struct {
 	auth   *service.AuthService
 	store  *store.Store
+	sync   *service.SyncService
 	logger *slog.Logger
 }
 
-func NewDashboardHandlers(auth *service.AuthService, st *store.Store, logger *slog.Logger) *DashboardHandlers {
-	return &DashboardHandlers{auth: auth, store: st, logger: logger}
+func NewDashboardHandlers(auth *service.AuthService, st *store.Store, sync *service.SyncService, logger *slog.Logger) *DashboardHandlers {
+	return &DashboardHandlers{auth: auth, store: st, sync: sync, logger: logger}
 }
 
 func (h *DashboardHandlers) Register(w http.ResponseWriter, r *http.Request) {
@@ -249,6 +250,39 @@ func (h *DashboardHandlers) Devices(w http.ResponseWriter, r *http.Request) {
 		devices = []store.DeviceWithSubCount{}
 	}
 	writeJSON(w, http.StatusOK, devices)
+}
+
+func (h *DashboardHandlers) SyncDevices(w http.ResponseWriter, r *http.Request) {
+	user := UserFromContext(r.Context())
+
+	switch r.Method {
+	case http.MethodGet:
+		status, err := h.sync.GetStatus(r.Context(), user.ID)
+		if err != nil {
+			h.logger.Error("dashboard get sync status", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+
+	case http.MethodPost:
+		var body struct {
+			Synchronize     [][]string `json:"synchronize"`
+			StopSynchronize []string   `json:"stop-synchronize"`
+		}
+		if err := readJSON(r, 1<<20, &body); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		status, err := h.sync.UpdateStatus(r.Context(), user.ID, body.Synchronize, body.StopSynchronize)
+		if err != nil {
+			h.logger.Error("dashboard update sync status", "error", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+	}
 }
 
 func (h *DashboardHandlers) Account(w http.ResponseWriter, r *http.Request) {
