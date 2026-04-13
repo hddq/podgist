@@ -1,6 +1,9 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
+	import { logout } from '$lib/api';
+	import { auth } from '$lib/auth.svelte';
 
 	const navItems = [
 		{ href: `${base}/dashboard`, label: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6' },
@@ -13,21 +16,44 @@
 	function isActive(href: string) {
 		return page.url.pathname === href || page.url.pathname.startsWith(href + '/');
 	}
+
+	async function handleLogout() {
+		await logout();
+		auth.clear();
+		goto(`${base}/login`, { replaceState: true });
+	}
 </script>
 
-<div class="flex min-w-0 items-center gap-2 px-6 py-5">
-	<span class="block max-w-full truncate text-xl font-bold text-primary">🎙 Podgist</span>
-</div>
+<aside class="z-20 flex h-screen w-64 flex-col border-r border-zinc-800/50 bg-black p-4">
+	<div class="mb-8 flex items-center gap-3 px-2">
+		<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800 text-zinc-200">🎧</div>
+		<span class="text-lg font-bold tracking-wide text-zinc-100">Podgist</span>
+	</div>
 
-<ul class="menu w-full flex-1 gap-1 px-3">
-	{#each navItems as item}
-		<li class="w-full">
-			<a href={item.href} class={`w-full ${isActive(item.href) ? 'active' : ''}`}>
+	<nav class="flex-1 space-y-2">
+		{#each navItems as item}
+			<a
+				href={item.href}
+				class={`group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+					isActive(item.href)
+						? 'border border-zinc-700 bg-zinc-900 text-zinc-100'
+						: 'border border-transparent text-zinc-400 hover:border-zinc-800 hover:bg-zinc-900/60 hover:text-zinc-200'
+				}`}
+			>
 				<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={item.icon} />
 				</svg>
-				{item.label}
+				<span>{item.label}</span>
 			</a>
-		</li>
-	{/each}
-</ul>
+		{/each}
+	</nav>
+
+	<div class="mt-auto border-t border-zinc-800/50 px-2 pt-4">
+		{#if auth.user}
+			<p class="mb-3 truncate text-xs uppercase tracking-wide text-zinc-400">{auth.user.username}</p>
+		{/if}
+		<button class="btn btn-ghost btn-sm w-full justify-start text-zinc-200 hover:bg-zinc-800/60" onclick={handleLogout}>
+			Logout
+		</button>
+	</div>
+</aside>
