@@ -50,7 +50,7 @@
 		<ErrorAlert message={error} />
 	{:else if data}
 		<!-- Stats -->
-		<div class="stats stats-vertical w-full shadow lg:stats-horizontal">
+		<div class="stats stats-vertical w-full shadow lg:stats-horizontal bg-base-200">
 			<StatCard title="Subscriptions" value={data.subscription_count} desc="Unique podcasts" />
 			<StatCard title="Devices" value={data.device_count} desc="Registered devices" />
 			<StatCard title="Episode Actions" value={data.episode_action_count} desc="Total recorded actions" />
