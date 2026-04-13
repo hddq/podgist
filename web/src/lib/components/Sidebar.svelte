@@ -24,7 +24,7 @@
 	}
 </script>
 
-<aside class="z-20 hidden h-screen w-64 flex-col border-r border-zinc-800/50 bg-black p-4 lg:flex">
+<aside class="z-20 hidden h-screen w-64 flex-col border-r border-zinc-800/50 bg-black p-4 lg:sticky lg:top-0 lg:flex lg:self-start">
 	<div class="mb-8 flex items-center gap-3 px-2">
 		<div class="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800 text-zinc-200">🎧</div>
 		<span class="text-lg font-bold tracking-wide text-zinc-100">Podgist</span>
