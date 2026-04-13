@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getSubscriptions, type Subscription } from '$lib/api';
+	import GlassCard from '$lib/components/GlassCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 
@@ -41,15 +42,15 @@
 	{:else if error}
 		<ErrorAlert message={error} />
 	{:else if subs.length === 0}
-		<div class="card bg-base-200 shadow">
+		<GlassCard>
 			<div class="card-body">
 				<p class="text-base-content/60">No subscriptions yet. Add podcasts from your client app.</p>
 			</div>
-		</div>
+		</GlassCard>
 	{:else}
 		<div class="flex flex-col gap-3">
 			{#each subs as sub (sub.podcast_url)}
-				<div class="card bg-base-200 shadow-sm">
+				<GlassCard class="shadow-lg">
 					<div class="card-body gap-2 py-4">
 						<a
 							href={sub.podcast_url}
@@ -66,7 +67,7 @@
 							{/each}
 						</div>
 					</div>
-				</div>
+				</GlassCard>
 			{/each}
 		</div>
 	{/if}

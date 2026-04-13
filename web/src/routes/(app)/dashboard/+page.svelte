@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getDashboard, type DashboardData } from '$lib/api';
+	import GlassCard from '$lib/components/GlassCard.svelte';
 	import StatCard from '$lib/components/StatCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
@@ -50,14 +51,16 @@
 		<ErrorAlert message={error} />
 	{:else if data}
 		<!-- Stats -->
-		<div class="stats stats-vertical w-full shadow lg:stats-horizontal bg-base-200">
-			<StatCard title="Subscriptions" value={data.subscription_count} desc="Unique podcasts" />
-			<StatCard title="Devices" value={data.device_count} desc="Registered devices" />
-			<StatCard title="Episode Actions" value={data.episode_action_count} desc="Total recorded actions" />
-		</div>
+		<GlassCard>
+			<div class="stats stats-vertical w-full lg:stats-horizontal">
+				<StatCard title="Subscriptions" value={data.subscription_count} desc="Unique podcasts" />
+				<StatCard title="Devices" value={data.device_count} desc="Registered devices" />
+				<StatCard title="Episode Actions" value={data.episode_action_count} desc="Total recorded actions" />
+			</div>
+		</GlassCard>
 
 		<!-- Recent Activity -->
-		<div class="card bg-base-200 shadow">
+		<GlassCard>
 			<div class="card-body">
 				<h2 class="card-title text-lg">Recent Activity</h2>
 				{#if data.recent_actions.length === 0}
@@ -98,6 +101,6 @@
 					</div>
 				{/if}
 			</div>
-		</div>
+		</GlassCard>
 	{/if}
 </div>

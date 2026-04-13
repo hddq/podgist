@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getHistory, type PlaybackHistoryEntry } from '$lib/api';
+	import GlassCard from '$lib/components/GlassCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 
@@ -55,13 +56,13 @@
 	{:else if error}
 		<ErrorAlert message={error} />
 	{:else if history.length === 0}
-		<div class="card bg-base-200 shadow">
+		<GlassCard>
 			<div class="card-body">
 				<p class="text-base-content/60">No playback history yet.</p>
 			</div>
-		</div>
+		</GlassCard>
 	{:else}
-		<div class="card bg-base-200 shadow">
+		<GlassCard>
 			<div class="card-body p-0">
 				<div class="overflow-x-auto">
 					<table class="table table-sm">
@@ -96,7 +97,7 @@
 					</table>
 				</div>
 			</div>
-		</div>
+		</GlassCard>
 		<p class="text-sm text-base-content/40">Showing last {history.length} episodes</p>
 	{/if}
 </div>

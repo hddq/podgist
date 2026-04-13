@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getDevices, getSyncDevices, updateSyncDevices, type Device, type SyncStatus } from '$lib/api';
+	import GlassCard from '$lib/components/GlassCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 
@@ -128,13 +129,13 @@
 	{:else if error}
 		<ErrorAlert message={error} />
 	{:else if devices.length === 0}
-		<div class="card bg-base-200 shadow">
+		<GlassCard>
 			<div class="card-body">
 				<p class="text-base-content/60">No devices registered yet. Connect a podcast client to get started.</p>
 			</div>
-		</div>
+		</GlassCard>
 	{:else}
-		<div class="card bg-base-200 shadow-sm">
+		<GlassCard class="shadow-xl">
 			<div class="card-body gap-4">
 				<div class="flex items-center justify-between gap-3">
 					<h2 class="text-lg font-semibold">Synchronization</h2>
@@ -151,14 +152,14 @@
 					<p class="text-sm text-base-content/60">Add at least two devices to manage synchronization groups.</p>
 				{:else}
 					<div class="grid gap-4 lg:grid-cols-2">
-						<div class="rounded-lg border border-base-300 p-4">
+						<div class="rounded-xl border border-zinc-800 bg-black/20 p-4">
 							<h3 class="font-medium">Current sync groups</h3>
 							{#if syncStatus.synchronized.length === 0}
 								<p class="mt-2 text-sm text-base-content/60">No synchronized device groups yet.</p>
 							{:else}
 								<div class="mt-3 space-y-2">
 									{#each syncStatus.synchronized as group, i (group.join('|') + '-' + i)}
-										<div class="rounded-md bg-base-100 p-3">
+										<div class="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
 											<p class="mb-2 text-xs uppercase tracking-wide text-base-content/50">Group {i + 1}</p>
 											<div class="flex flex-wrap gap-2">
 												{#each group as uid (uid)}
@@ -178,12 +179,12 @@
 							</p>
 						</div>
 
-						<div class="rounded-lg border border-base-300 p-4">
+						<div class="rounded-xl border border-zinc-800 bg-black/20 p-4">
 							<h3 class="font-medium">Group editor</h3>
 							<p class="mt-1 text-sm text-base-content/60">Select two or more devices to create or replace a sync group.</p>
 							<div class="mt-3 space-y-1">
 								{#each devices as device (device.uid)}
-									<label class="label cursor-pointer justify-start gap-3 rounded-md px-2 py-1 hover:bg-base-300/60">
+									<label class="label cursor-pointer justify-start gap-3 rounded-md px-2 py-1 hover:bg-zinc-800/50">
 										<input
 											type="checkbox"
 											class="checkbox checkbox-sm"
@@ -209,7 +210,7 @@
 						</div>
 					</div>
 
-					<div class="rounded-lg border border-base-300 p-4">
+					<div class="rounded-xl border border-zinc-800 bg-black/20 p-4">
 						<h3 class="font-medium">Stop sync per device</h3>
 						{#if syncedDeviceUIDs().length === 0}
 							<p class="mt-2 text-sm text-base-content/60">No devices are currently synchronized.</p>
@@ -225,11 +226,11 @@
 					</div>
 				{/if}
 			</div>
-		</div>
+		</GlassCard>
 
 		<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
 			{#each devices as device (device.uid)}
-				<div class="card bg-base-200 shadow-sm">
+				<GlassCard class="shadow-lg">
 					<div class="card-body gap-3">
 						<div class="flex items-start justify-between gap-2">
 							<div>
@@ -250,7 +251,7 @@
 							Added {formatDate(device.created_at)}
 						</div>
 					</div>
-				</div>
+				</GlassCard>
 			{/each}
 		</div>
 	{/if}

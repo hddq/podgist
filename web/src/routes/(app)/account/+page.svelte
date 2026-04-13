@@ -3,6 +3,7 @@
 	import { base } from '$app/paths';
 	import { getAccount, logout, type AccountData } from '$lib/api';
 	import { auth } from '$lib/auth.svelte';
+	import GlassCard from '$lib/components/GlassCard.svelte';
 	import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
 	import ErrorAlert from '$lib/components/ErrorAlert.svelte';
 
@@ -48,7 +49,7 @@
 	{:else if account}
 		<div class="grid gap-4 lg:grid-cols-2">
 			<!-- Account Info -->
-			<div class="card bg-base-200 shadow">
+			<GlassCard>
 				<div class="card-body gap-4">
 					<h2 class="card-title">Profile</h2>
 
@@ -83,10 +84,10 @@
 						{/if}
 					</div>
 				</div>
-			</div>
+			</GlassCard>
 
 			<!-- Session / Danger zone -->
-			<div class="card bg-base-200 shadow">
+			<GlassCard>
 				<div class="card-body gap-4">
 					<h2 class="card-title">Session</h2>
 					<p class="text-sm text-base-content/60">
@@ -101,7 +102,7 @@
 						</button>
 					</div>
 				</div>
-			</div>
+			</GlassCard>
 		</div>
 	{/if}
 </div>
