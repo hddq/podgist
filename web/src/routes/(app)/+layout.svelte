@@ -29,7 +29,7 @@
 		<span class="loading loading-spinner loading-lg text-primary"></span>
 	</div>
 {:else}
-	<div class="relative flex min-h-screen overflow-x-hidden bg-black text-zinc-100 font-sans">
+	<div class="relative flex min-h-screen overflow-hidden bg-black text-zinc-100 font-sans">
 		<div
 			class="pointer-events-none absolute left-[10%] top-[-10%] z-0 h-[500px] w-[500px] rounded-full bg-emerald-600/10 blur-[120px]"
 		></div>
@@ -40,7 +40,7 @@
 		<Sidebar />
 		<BottomNav />
 
-		<main class="relative z-10 flex-1 overflow-y-auto p-6 pb-28 lg:p-10 lg:pb-10">
+		<main class="relative z-10 flex-1 overflow-y-auto p-6 pb-28 lg:ml-64 lg:p-10 lg:pb-10">
 			{@render children()}
 		</main>
 	</div>
