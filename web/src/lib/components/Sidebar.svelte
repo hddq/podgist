@@ -15,14 +15,14 @@
 	}
 </script>
 
-<div class="flex items-center gap-2 px-6 py-5">
-	<span class="text-xl font-bold text-primary">🎙 Podgist</span>
+<div class="flex min-w-0 items-center gap-2 px-6 py-5">
+	<span class="block max-w-full truncate text-xl font-bold text-primary">🎙 Podgist</span>
 </div>
 
-<ul class="menu flex-1 gap-1 px-3">
+<ul class="menu w-full flex-1 gap-1 px-3">
 	{#each navItems as item}
-		<li>
-			<a href={item.href} class={isActive(item.href) ? 'active' : ''}>
+		<li class="w-full">
+			<a href={item.href} class={`w-full ${isActive(item.href) ? 'active' : ''}`}>
 				<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={item.icon} />
 				</svg>
