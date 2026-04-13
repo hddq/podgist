@@ -3,6 +3,7 @@
 	import { base } from '$app/paths';
 	import { auth } from '$lib/auth.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import BottomNav from '$lib/components/BottomNav.svelte';
 
 	let { children } = $props();
 
@@ -37,8 +38,9 @@
 		></div>
 
 		<Sidebar />
+		<BottomNav />
 
-		<main class="relative z-10 flex-1 overflow-y-auto p-10">
+		<main class="relative z-10 flex-1 overflow-y-auto p-6 pb-28 lg:p-10 lg:pb-10">
 			{@render children()}
 		</main>
 	</div>
