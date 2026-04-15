@@ -43,12 +43,12 @@
 </svelte:head>
 
 <AuthLayout title="Login" subtitle="Sign in to your dashboard" {error}>
-	<form onsubmit={handleSubmit} class="flex flex-col gap-3">
-		<fieldset class="fieldset">
-			<legend class="fieldset-legend">Username</legend>
+	<form onsubmit={handleSubmit} class="flex flex-col gap-4">
+		<fieldset class="fieldset gap-1">
+			<legend class="fieldset-legend text-zinc-300">Username</legend>
 			<input
 				type="text"
-				class="input w-full"
+				class="input w-full border-zinc-700 bg-zinc-950/70 text-zinc-100 placeholder:text-zinc-500"
 				placeholder="username"
 				bind:value={username}
 				required
@@ -56,11 +56,11 @@
 			/>
 		</fieldset>
 
-		<fieldset class="fieldset">
-			<legend class="fieldset-legend">Password</legend>
+		<fieldset class="fieldset gap-1">
+			<legend class="fieldset-legend text-zinc-300">Password</legend>
 			<input
 				type="password"
-				class="input w-full"
+				class="input w-full border-zinc-700 bg-zinc-950/70 text-zinc-100 placeholder:text-zinc-500"
 				placeholder="••••••••"
 				bind:value={password}
 				required
@@ -68,7 +68,11 @@
 			/>
 		</fieldset>
 
-		<button type="submit" class="btn btn-primary mt-2 w-full" disabled={loading}>
+		<button
+			type="submit"
+			class="btn mt-2 w-full border-emerald-500/40 bg-emerald-500 text-black hover:bg-emerald-400"
+			disabled={loading}
+		>
 			{#if loading}
 				<span class="loading loading-spinner loading-sm"></span>
 			{/if}
@@ -77,9 +81,11 @@
 	</form>
 
 	{#snippet footer()}
-		<p class="text-center text-sm text-base-content/60">
+		<p class="text-center text-sm text-zinc-400">
 			Need an account?
-			<a class="link link-primary" href={`${base}/register`}>Create one</a>
+			<a class="font-medium text-emerald-400 transition-colors hover:text-emerald-300" href={`${base}/register`}
+				>Create one</a
+			>
 		</p>
 	{/snippet}
 </AuthLayout>
