@@ -3,7 +3,7 @@
 .gopath/
 .tmp/
 config.yaml
-compose.yaml
+compose*.yaml
 .postgres_data/
 .sqlite_data/
 internal/webui/dist/
