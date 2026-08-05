@@ -1,0 +1,37 @@
+services:
+  migrate:
+    image: ghcr.io/hddq/podgist:edge
+    pull_policy: always
+    # build:
+    #   context: ..
+    #   args:
+    #     GO_VERSION: ${GO_VERSION:?set GO_VERSION from go.mod, e.g. GO_VERSION=$(./scripts/go-version.sh)}
+    environment:
+      DATABASE_DRIVER: sqlite
+      PODGIST_DB_DSN: /data/podgist.db
+    command: ["migrate", "up"]
+    volumes:
+      - ../config.example.yaml:/etc/podgist/config.yaml:ro
+      - sqlite_data:/data
+
+  app:
+    image: ghcr.io/hddq/podgist:edge
+    pull_policy: always
+    # build:
+    #   context: ..
+    #   args:
+    #     GO_VERSION: ${GO_VERSION:?set GO_VERSION from go.mod, e.g. GO_VERSION=$(./scripts/go-version.sh)}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_DRIVER: sqlite
+      PODGIST_DB_DSN: /data/podgist.db
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../config.example.yaml:/etc/podgist/config.yaml:ro
+      - sqlite_data:/data
+
+volumes:
+  sqlite_data:
