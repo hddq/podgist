@@ -164,3 +164,24 @@ type Setting struct {
 	Key       string
 	Value     string
 }
+
+type DashboardSummary struct {
+	SubscriptionCount  int `json:"subscription_count"`
+	DeviceCount        int `json:"device_count"`
+	EpisodeActionCount int `json:"episode_action_count"`
+}
+
+type AggregatedSubscription struct {
+	PodcastURL   string   `json:"podcast_url"`
+	PodcastTitle string   `json:"podcast_title,omitempty"`
+	Devices      []string `json:"devices"`
+}
+
+type DeviceWithSubCount struct {
+	UID               string     `json:"uid"`
+	Caption           string     `json:"caption"`
+	Type              DeviceType `json:"type"`
+	SubscriptionCount int        `json:"subscription_count"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+}

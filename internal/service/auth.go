@@ -7,27 +7,27 @@ import (
 	"errors"
 	"time"
 
+	"database/sql"
 	"github.com/hddq/podgist/internal/domain"
 	"github.com/hddq/podgist/internal/store"
-	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
 const SessionLifetime = 365 * 24 * time.Hour
 
 type AuthService struct {
-	store      *store.Store
+	store      store.Store
 	bcryptCost int
 }
 
-func NewAuthService(s *store.Store, bcryptCost int) *AuthService {
+func NewAuthService(s store.Store, bcryptCost int) *AuthService {
 	return &AuthService{store: s, bcryptCost: bcryptCost}
 }
 
 func (s *AuthService) Authenticate(ctx context.Context, username, password string) (*domain.User, error) {
 	user, err := s.store.GetUserByUsername(ctx, username)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.New("invalid credentials")
 		}
 		return nil, err
@@ -48,7 +48,7 @@ func (s *AuthService) GetUserBySessionID(ctx context.Context, sessionID string) 
 	}
 	user, err := s.store.GetUserBySessionID(ctx, sessionID, now)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.New("invalid session")
 		}
 		return nil, err
@@ -69,7 +69,7 @@ func (s *AuthService) CreateSession(ctx context.Context, userID int64) (*domain.
 func (s *AuthService) RefreshSession(ctx context.Context, sessionID string) (*domain.Session, error) {
 	expiresAt := time.Now().UTC().Add(SessionLifetime)
 	if err := s.store.TouchSession(ctx, sessionID, expiresAt); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errors.New("invalid session")
 		}
 		return nil, err

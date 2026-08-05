@@ -24,6 +24,7 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
+	Driver   string `yaml:"driver"`
 	DSN      string `yaml:"dsn"`
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
@@ -109,12 +110,20 @@ func applyDefaults(cfg *Config) {
 	if cfg.Logging.Format == "" {
 		cfg.Logging.Format = "text"
 	}
+	if cfg.Database.Driver == "" {
+		cfg.Database.Driver = "postgres"
+	}
 	if cfg.Database.Port == 0 {
 		cfg.Database.Port = 5432
 	}
 }
 
 func applyEnvOverrides(cfg *Config) {
+	if v := os.Getenv("DATABASE_DRIVER"); v != "" {
+		cfg.Database.Driver = v
+	} else if v := os.Getenv("PODGIST_DB_DRIVER"); v != "" {
+		cfg.Database.Driver = v
+	}
 	if v := os.Getenv("PODGIST_DB_PASSWORD"); v != "" {
 		cfg.Database.Password = v
 	}

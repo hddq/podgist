@@ -13,12 +13,12 @@ import (
 
 type DashboardHandlers struct {
 	auth   *service.AuthService
-	store  *store.Store
+	store  store.Store
 	sync   *service.SyncService
 	logger *slog.Logger
 }
 
-func NewDashboardHandlers(auth *service.AuthService, st *store.Store, sync *service.SyncService, logger *slog.Logger) *DashboardHandlers {
+func NewDashboardHandlers(auth *service.AuthService, st store.Store, sync *service.SyncService, logger *slog.Logger) *DashboardHandlers {
 	return &DashboardHandlers{auth: auth, store: st, sync: sync, logger: logger}
 }
 
@@ -232,7 +232,7 @@ func (h *DashboardHandlers) Subscriptions(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if subs == nil {
-		subs = []store.AggregatedSubscription{}
+		subs = []domain.AggregatedSubscription{}
 	}
 	writeJSON(w, http.StatusOK, subs)
 }
@@ -247,7 +247,7 @@ func (h *DashboardHandlers) Devices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if devices == nil {
-		devices = []store.DeviceWithSubCount{}
+		devices = []domain.DeviceWithSubCount{}
 	}
 	writeJSON(w, http.StatusOK, devices)
 }

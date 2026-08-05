@@ -18,7 +18,6 @@ import (
 	"github.com/hddq/podgist/internal/service"
 	"github.com/hddq/podgist/internal/store"
 	"github.com/hddq/podgist/internal/webui"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -58,20 +57,10 @@ func runServe(args []string) error {
 
 	logger := setupLogger(cfg.Logging)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	pool, err := pgxpool.New(ctx, cfg.Database.GetDSN())
+	st, err := store.New(cfg.Database.Driver, cfg.Database.GetDSN())
 	if err != nil {
-		return fmt.Errorf("failed to connect to database: %w", err)
+		return fmt.Errorf("failed to initialize store: %w", err)
 	}
-	defer pool.Close()
-
-	if err := pool.Ping(ctx); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	st := store.New(pool)
 
 	authSvc := service.NewAuthService(st, cfg.Auth.BcryptCost)
 	metadataSvc := service.NewPodcastMetadataService(st, logger)
@@ -137,10 +126,10 @@ func runMigrate(args []string) error {
 
 	logger := setupLogger(cfg.Logging)
 	ctx := context.Background()
-	dir := migrations.Dir("")
+	dir := migrations.Dir(cfg.Database.Driver, "")
 
 	logger.Info("running migrations", "dir", dir)
-	if err := migrations.Up(ctx, cfg.Database.GetDSN(), dir); err != nil {
+	if err := migrations.Up(ctx, cfg.Database.Driver, cfg.Database.GetDSN(), dir); err != nil {
 		return err
 	}
 	logger.Info("migrations completed", "dir", dir)

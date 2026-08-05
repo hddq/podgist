@@ -1,0 +1,56 @@
+version: "2"
+sql:
+  - schema: "migrations/postgres"
+    queries: "queries/postgres"
+    engine: "postgresql"
+    gen:
+      go:
+        package: "postgres"
+        out: "internal/store/postgres"
+        emit_interface: true
+        emit_json_tags: true
+        emit_pointers_for_null_types: true
+
+  - schema: "migrations/sqlite"
+    queries: "queries/sqlite"
+    engine: "sqlite"
+    gen:
+      go:
+        package: "sqlite"
+        out: "internal/store/sqlite"
+        emit_interface: true
+        emit_json_tags: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - column: "users.created_at"
+            go_type: "time.Time"
+          - column: "sessions.expires_at"
+            go_type: "time.Time"
+          - column: "sessions.created_at"
+            go_type: "time.Time"
+          - column: "sessions.updated_at"
+            go_type: "time.Time"
+          - column: "devices.created_at"
+            go_type: "time.Time"
+          - column: "devices.updated_at"
+            go_type: "time.Time"
+          - column: "subscriptions.created_at"
+            go_type: "time.Time"
+          - column: "subscription_events.created_at"
+            go_type: "time.Time"
+          - column: "episode_actions.timestamp"
+            go_type: "time.Time"
+          - column: "episode_actions.created_at"
+            go_type: "time.Time"
+          - column: "podcasts.last_fetched_at"
+            go_type: "time.Time"
+          - column: "podcasts.created_at"
+            go_type: "time.Time"
+          - column: "podcasts.updated_at"
+            go_type: "time.Time"
+          - column: "podcast_episodes.published_at"
+            go_type: "time.Time"
+          - column: "podcast_episodes.created_at"
+            go_type: "time.Time"
+          - column: "podcast_episodes.updated_at"
+            go_type: "time.Time"

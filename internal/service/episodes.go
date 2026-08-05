@@ -10,12 +10,12 @@ import (
 )
 
 type EpisodeService struct {
-	store             *store.Store
+	store             store.Store
 	maxEpisodeActions int
 	metadata          *PodcastMetadataService
 }
 
-func NewEpisodeService(s *store.Store, maxActions int, metadata *PodcastMetadataService) *EpisodeService {
+func NewEpisodeService(s store.Store, maxActions int, metadata *PodcastMetadataService) *EpisodeService {
 	return &EpisodeService{store: s, maxEpisodeActions: maxActions, metadata: metadata}
 }
 

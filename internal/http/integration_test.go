@@ -18,12 +18,14 @@ import (
 	"testing"
 	"time"
 
+	"database/sql"
+	_ "github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/hddq/podgist/internal/domain"
 	apphttp "github.com/hddq/podgist/internal/http"
 	"github.com/hddq/podgist/internal/migrations"
 	"github.com/hddq/podgist/internal/service"
 	"github.com/hddq/podgist/internal/store"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -31,7 +33,8 @@ import (
 
 type testEnv struct {
 	server *httptest.Server
-	pool   *pgxpool.Pool
+	db     *sql.DB
+	st     store.Store
 	auth   *service.AuthService
 }
 
@@ -47,7 +50,7 @@ func TestMain(m *testing.M) {
 
 	if httpTestEnv != nil {
 		httpTestEnv.server.Close()
-		httpTestEnv.pool.Close()
+		httpTestEnv.db.Close()
 	}
 	if pgContainer != nil {
 		_ = pgContainer.Terminate(context.Background())
@@ -82,25 +85,30 @@ func setupTestEnv(t *testing.T) *testEnv {
 			return
 		}
 
-		pool, err := pgxpool.New(ctx, connStr)
+		db, err := sql.Open("pgx", connStr)
 		if err != nil {
 			httpTestEnvErr = err
 			return
 		}
 
-		migrationsDir, err := filepath.Abs("../../migrations")
+		migrationsDir, err := filepath.Abs("../../migrations/postgres")
 		if err != nil {
-			pool.Close()
+			db.Close()
 			httpTestEnvErr = err
 			return
 		}
-		if err := migrations.Up(ctx, connStr, migrationsDir); err != nil {
-			pool.Close()
+		if err := migrations.Up(ctx, "postgres", connStr, migrationsDir); err != nil {
+			db.Close()
 			httpTestEnvErr = err
 			return
 		}
 
-		st := store.New(pool)
+		st, err := store.New("postgres", connStr)
+		if err != nil {
+			db.Close()
+			httpTestEnvErr = err
+			return
+		}
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 		authSvc := service.NewAuthService(st, 4)
@@ -118,7 +126,8 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 		httpTestEnv = &testEnv{
 			server: httptest.NewServer(router),
-			pool:   pool,
+			db:     db,
+			st:     st,
 			auth:   authSvc,
 		}
 	})
@@ -135,7 +144,7 @@ func resetTestData(t *testing.T, env *testEnv) {
 	t.Helper()
 
 	ctx := t.Context()
-	if _, err := env.pool.Exec(ctx, `
+	if _, err := env.db.ExecContext(ctx, `
 		TRUNCATE TABLE
 			settings,
 			podcast_episodes,
@@ -258,7 +267,7 @@ func podcastMetadataRow(t *testing.T, env *testEnv, podcastURL string) (title, e
 	t.Helper()
 
 	var ts *time.Time
-	err := env.pool.QueryRow(t.Context(), `
+	err := env.db.QueryRowContext(t.Context(), `
 		SELECT title, etag, last_modified, last_fetched_at
 		FROM podcasts
 		WHERE url = $1
@@ -273,7 +282,7 @@ func podcastEpisodeCount(t *testing.T, env *testEnv, podcastURL string) int {
 	t.Helper()
 
 	var count int
-	if err := env.pool.QueryRow(t.Context(), `
+	if err := env.db.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
 		FROM podcast_episodes pe
 		JOIN podcasts p ON p.id = pe.podcast_id
@@ -288,7 +297,7 @@ func podcastEpisodeTitle(t *testing.T, env *testEnv, podcastURL, episodeURL stri
 	t.Helper()
 
 	var title string
-	if err := env.pool.QueryRow(t.Context(), `
+	if err := env.db.QueryRowContext(t.Context(), `
 		SELECT pe.title
 		FROM podcast_episodes pe
 		JOIN podcasts p ON p.id = pe.podcast_id
@@ -336,7 +345,7 @@ func testUserID(t *testing.T, env *testEnv) int64 {
 	t.Helper()
 
 	var userID int64
-	if err := env.pool.QueryRow(t.Context(), `SELECT id FROM users WHERE username = 'testuser'`).Scan(&userID); err != nil {
+	if err := env.db.QueryRowContext(t.Context(), `SELECT id FROM users WHERE username = 'testuser'`).Scan(&userID); err != nil {
 		t.Fatalf("failed to look up test user: %v", err)
 	}
 	return userID
@@ -347,7 +356,7 @@ func createDevice(t *testing.T, env *testEnv, uid string) int64 {
 
 	userID := testUserID(t, env)
 	var deviceID int64
-	if err := env.pool.QueryRow(t.Context(), `
+	if err := env.db.QueryRowContext(t.Context(), `
 		INSERT INTO devices (user_id, uid, caption, type)
 		VALUES ($1, $2, '', 'other')
 		RETURNING id
@@ -360,7 +369,7 @@ func createDevice(t *testing.T, env *testEnv, uid string) int64 {
 func seedEpisodeAction(t *testing.T, env *testEnv, action domain.EpisodeAction) {
 	t.Helper()
 
-	if err := store.New(env.pool).AddEpisodeAction(t.Context(), &action); err != nil {
+	if err := env.st.AddEpisodeAction(t.Context(), &action); err != nil {
 		t.Fatalf("failed to seed episode action: %v", err)
 	}
 }
@@ -368,7 +377,7 @@ func seedEpisodeAction(t *testing.T, env *testEnv, action domain.EpisodeAction) 
 func seedPodcastMetadata(t *testing.T, env *testEnv, podcast domain.Podcast, episodes []domain.PodcastEpisodeMetadata) {
 	t.Helper()
 
-	if err := store.New(env.pool).UpsertPodcastWithEpisodes(t.Context(), &podcast, episodes); err != nil {
+	if err := env.st.UpsertPodcastWithEpisodes(t.Context(), &podcast, episodes); err != nil {
 		t.Fatalf("failed to seed podcast metadata: %v", err)
 	}
 }
@@ -1078,7 +1087,7 @@ func TestProtectedEndpointNoAuth(t *testing.T) {
 }
 
 func TestAPIRouterDashboardRouteNotRegistered(t *testing.T) {
-	st := store.New(nil)
+	var st store.Store
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	authSvc := service.NewAuthService(st, 4)
 	metadataSvc := service.NewPodcastMetadataServiceWithClient(st, logger, &http.Client{Timeout: time.Second}, time.Second, 2*time.Hour)
@@ -1259,7 +1268,7 @@ func TestEpisodeMetadataRefreshHonorsCooldownAndUsesConditionalGet(t *testing.T)
 		t.Fatal("expected initial metadata to be stored before refresh test")
 	}
 
-	if _, err := env.pool.Exec(t.Context(), `
+	if _, err := env.db.ExecContext(t.Context(), `
 		UPDATE podcasts
 		SET last_fetched_at = $2
 		WHERE url = $1
@@ -1297,7 +1306,7 @@ func TestEpisodeMetadataRefreshHonorsCooldownAndUsesConditionalGet(t *testing.T)
 		t.Fatal("expected 304 refresh not to add new episodes")
 	}
 
-	if _, err := env.pool.Exec(t.Context(), `
+	if _, err := env.db.ExecContext(t.Context(), `
 		UPDATE podcasts
 		SET last_fetched_at = $2
 		WHERE url = $1
@@ -1592,7 +1601,7 @@ func TestDashboardEndpointsIncludeMetadataTitles(t *testing.T) {
 		Title:      "Named Episode",
 	}})
 
-	if err := store.New(env.pool).AddSubscription(t.Context(), userID, deviceID, podcastURL, now); err != nil {
+	if err := env.st.AddSubscription(t.Context(), userID, deviceID, podcastURL, now); err != nil {
 		t.Fatalf("failed to seed subscription: %v", err)
 	}
 

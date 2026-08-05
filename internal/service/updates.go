@@ -8,10 +8,10 @@ import (
 )
 
 type UpdatesService struct {
-	store *store.Store
+	store store.Store
 }
 
-func NewUpdatesService(s *store.Store) *UpdatesService {
+func NewUpdatesService(s store.Store) *UpdatesService {
 	return &UpdatesService{store: s}
 }
 

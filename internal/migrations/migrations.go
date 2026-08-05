@@ -7,28 +7,38 @@ import (
 	"path/filepath"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "modernc.org/sqlite"
 	"github.com/pressly/goose/v3"
 )
 
 const defaultDir = "/app/migrations"
 
-func Dir(custom string) string {
+func Dir(driver, custom string) string {
 	if custom != "" {
 		return custom
 	}
 	if envDir := os.Getenv("PODGIST_MIGRATIONS_DIR"); envDir != "" {
 		return envDir
 	}
-	return defaultDir
+	sub := "postgres"
+	if driver == "sqlite" || driver == "sqlite3" {
+		sub = "sqlite"
+	}
+	return filepath.Join(defaultDir, sub)
 }
 
-func Up(ctx context.Context, dsn, dir string) error {
+func Up(ctx context.Context, driver, dsn, dir string) error {
 	resolvedDir, err := filepath.Abs(dir)
 	if err != nil {
 		return fmt.Errorf("resolve migrations dir: %w", err)
 	}
 
-	db, err := goose.OpenDBWithDriver("pgx", dsn)
+	gooseDriver := "pgx"
+	if driver == "sqlite" || driver == "sqlite3" {
+		gooseDriver = "sqlite3"
+	}
+
+	db, err := goose.OpenDBWithDriver(gooseDriver, dsn)
 	if err != nil {
 		return fmt.Errorf("open db for migrations: %w", err)
 	}

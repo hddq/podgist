@@ -8,10 +8,10 @@ import (
 )
 
 type SyncService struct {
-	store *store.Store
+	store store.Store
 }
 
-func NewSyncService(s *store.Store) *SyncService {
+func NewSyncService(s store.Store) *SyncService {
 	return &SyncService{store: s}
 }
 

@@ -11,11 +11,11 @@ import (
 )
 
 type SubscriptionService struct {
-	store    *store.Store
+	store    store.Store
 	metadata *PodcastMetadataService
 }
 
-func NewSubscriptionService(s *store.Store, metadata *PodcastMetadataService) *SubscriptionService {
+func NewSubscriptionService(s store.Store, metadata *PodcastMetadataService) *SubscriptionService {
 	return &SubscriptionService{store: s, metadata: metadata}
 }
 

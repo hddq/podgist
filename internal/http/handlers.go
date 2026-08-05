@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
+	"database/sql"
 	"github.com/go-chi/chi/v5"
 	"github.com/hddq/podgist/internal/domain"
 	"github.com/hddq/podgist/internal/service"
-	"github.com/jackc/pgx/v5"
 )
 
 type Handlers struct {
@@ -162,7 +162,7 @@ func (h *Handlers) Episodes(w http.ResponseWriter, r *http.Request) {
 		if d := r.URL.Query().Get("device"); d != "" {
 			dev, err := h.devices.Get(r.Context(), user.ID, d)
 			if err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
+				if errors.Is(err, sql.ErrNoRows) {
 					http.Error(w, "device not found", http.StatusNotFound)
 					return
 				}
@@ -207,7 +207,7 @@ func (h *Handlers) DeviceUpdate(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		dev, err := h.devices.Get(r.Context(), user.ID, deviceUID)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+			if errors.Is(err, sql.ErrNoRows) {
 				http.Error(w, "device not found", http.StatusNotFound)
 				return
 			}
@@ -347,7 +347,7 @@ func (h *Handlers) Updates(w http.ResponseWriter, r *http.Request) {
 
 	dev, err := h.devices.Get(r.Context(), user.ID, deviceUID)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			http.Error(w, "device not found", http.StatusNotFound)
 			return
 		}

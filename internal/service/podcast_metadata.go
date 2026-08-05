@@ -22,7 +22,7 @@ const (
 )
 
 type PodcastMetadataService struct {
-	store        *store.Store
+	store        store.Store
 	logger       *slog.Logger
 	client       *http.Client
 	fetchTimeout time.Duration
@@ -30,7 +30,7 @@ type PodcastMetadataService struct {
 	singleflight singleflight.Group
 }
 
-func NewPodcastMetadataService(st *store.Store, logger *slog.Logger) *PodcastMetadataService {
+func NewPodcastMetadataService(st store.Store, logger *slog.Logger) *PodcastMetadataService {
 	return NewPodcastMetadataServiceWithClient(
 		st,
 		logger,
@@ -41,7 +41,7 @@ func NewPodcastMetadataService(st *store.Store, logger *slog.Logger) *PodcastMet
 }
 
 func NewPodcastMetadataServiceWithClient(
-	st *store.Store,
+	st store.Store,
 	logger *slog.Logger,
 	client *http.Client,
 	fetchTimeout time.Duration,

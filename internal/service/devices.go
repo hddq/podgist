@@ -8,10 +8,10 @@ import (
 )
 
 type DeviceService struct {
-	store *store.Store
+	store store.Store
 }
 
-func NewDeviceService(s *store.Store) *DeviceService {
+func NewDeviceService(s store.Store) *DeviceService {
 	return &DeviceService{store: s}
 }
 

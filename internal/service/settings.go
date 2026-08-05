@@ -9,10 +9,10 @@ import (
 )
 
 type SettingsService struct {
-	store *store.Store
+	store store.Store
 }
 
-func NewSettingsService(s *store.Store) *SettingsService {
+func NewSettingsService(s store.Store) *SettingsService {
 	return &SettingsService{store: s}
 }
 
