@@ -84,6 +84,9 @@ func runServe(args []string) error {
 	// Periodically clean up expired sessions in the background so we
 	// don't need to do it on every request (important for SQLite).
 	go func() {
+		if err := authSvc.CleanupExpiredSessions(context.Background()); err != nil {
+			logger.Error("initial session cleanup failed", "error", err)
+		}
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
