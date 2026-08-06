@@ -90,18 +90,28 @@ func BasicAuthMiddleware(auth *service.AuthService, realm string) func(http.Hand
 			if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" {
 				user, sessionErr := auth.GetUserBySessionID(r.Context(), cookie.Value)
 				if sessionErr == nil {
-					session, refreshErr := auth.RefreshSession(r.Context(), cookie.Value)
+					session, refreshed, refreshErr := auth.RefreshSession(r.Context(), cookie.Value)
 					if refreshErr != nil {
 						http.Error(w, "internal error", http.StatusInternalServerError)
 						return
 					}
-					http.SetCookie(w, sessionCookie(session))
+					if refreshed {
+						http.SetCookie(w, sessionCookie(session))
+					}
 					ctx := context.WithValue(r.Context(), userContextKey, user)
 					ctx = context.WithValue(ctx, sessionContextKey, session)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
-				http.SetCookie(w, clearSessionCookie())
+				// Only clear the session cookie when the session is
+				// genuinely invalid (e.g. expired/not found). Transient
+				// database errors should not log the user out.
+				if isInvalidSession(sessionErr) {
+					http.SetCookie(w, clearSessionCookie())
+				} else {
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
 			}
 
 			username, password, ok, err := parseBasicAuthHeader(r)
@@ -169,16 +179,22 @@ func SessionAuthMiddleware(auth *service.AuthService) func(http.Handler) http.Ha
 			}
 			user, err := auth.GetUserBySessionID(r.Context(), cookie.Value)
 			if err != nil {
-				http.SetCookie(w, clearSessionCookie())
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				if isInvalidSession(err) {
+					http.SetCookie(w, clearSessionCookie())
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				} else {
+					http.Error(w, "internal error", http.StatusInternalServerError)
+				}
 				return
 			}
-			session, err := auth.RefreshSession(r.Context(), cookie.Value)
+			session, refreshed, err := auth.RefreshSession(r.Context(), cookie.Value)
 			if err != nil {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 				return
 			}
-			http.SetCookie(w, sessionCookie(session))
+			if refreshed {
+				http.SetCookie(w, sessionCookie(session))
+			}
 			ctx := context.WithValue(r.Context(), userContextKey, user)
 			ctx = context.WithValue(ctx, sessionContextKey, session)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -193,4 +209,16 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// isInvalidSession returns true when the error indicates the session
+// itself is invalid (expired, not found, missing) rather than a
+// transient infrastructure error (e.g. database locked). Only
+// genuinely invalid sessions should trigger cookie clearing / 401.
+func isInvalidSession(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return msg == "invalid session" || msg == "missing session"
 }

@@ -81,6 +81,18 @@ func runServe(args []string) error {
 
 	router := apphttp.NewRouter(authSvc, handlers, dashHandlers, cfg.Auth.Realm, logger, webFS)
 
+	// Periodically clean up expired sessions in the background so we
+	// don't need to do it on every request (important for SQLite).
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := authSvc.CleanupExpiredSessions(context.Background()); err != nil {
+				logger.Error("session cleanup failed", "error", err)
+			}
+		}
+	}()
+
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{
 		Addr:         addr,

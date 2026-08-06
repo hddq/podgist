@@ -15,6 +15,12 @@ import (
 
 const SessionLifetime = 365 * 24 * time.Hour
 
+// SessionRefreshThreshold controls how close to expiry a session must
+// be before RefreshSession actually writes a new expires_at to the
+// database. With a 365-day lifetime this avoids an UPDATE on every
+// single request while still keeping active sessions alive.
+const SessionRefreshThreshold = 30 * 24 * time.Hour
+
 type AuthService struct {
 	store      store.Store
 	bcryptCost int
@@ -43,9 +49,9 @@ func (s *AuthService) GetUserBySessionID(ctx context.Context, sessionID string) 
 		return nil, errors.New("missing session")
 	}
 	now := time.Now().UTC()
-	if err := s.store.DeleteExpiredSessions(ctx, now); err != nil {
-		return nil, err
-	}
+	// Expired-session cleanup is handled in the background by
+	// CleanupExpiredSessions rather than on every request, which
+	// avoids a write-lock during read-only authentication checks.
 	user, err := s.store.GetUserBySessionID(ctx, sessionID, now)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -66,15 +72,33 @@ func (s *AuthService) CreateSession(ctx context.Context, userID int64) (*domain.
 	return s.store.CreateSession(ctx, sessionID, userID, expiresAt)
 }
 
-func (s *AuthService) RefreshSession(ctx context.Context, sessionID string) (*domain.Session, error) {
-	expiresAt := time.Now().UTC().Add(SessionLifetime)
-	if err := s.store.TouchSession(ctx, sessionID, expiresAt); err != nil {
+func (s *AuthService) RefreshSession(ctx context.Context, sessionID string) (*domain.Session, bool, error) {
+	session, err := s.store.GetSessionByID(ctx, sessionID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, errors.New("invalid session")
+			return nil, false, errors.New("invalid session")
 		}
-		return nil, err
+		return nil, false, err
 	}
-	return &domain.Session{ID: sessionID, ExpiresAt: expiresAt}, nil
+
+	// Only write a new expiry when the session is within the refresh
+	// threshold. This turns most requests into pure reads.
+	if time.Until(session.ExpiresAt) < SessionRefreshThreshold {
+		newExpiry := time.Now().UTC().Add(SessionLifetime)
+		if err := s.store.TouchSession(ctx, sessionID, newExpiry); err != nil {
+			return nil, false, err
+		}
+		session.ExpiresAt = newExpiry
+		return session, true, nil
+	}
+
+	return session, false, nil
+}
+
+// CleanupExpiredSessions removes sessions past their expiry. Call this
+// periodically from a background goroutine rather than on every request.
+func (s *AuthService) CleanupExpiredSessions(ctx context.Context) error {
+	return s.store.DeleteExpiredSessions(ctx, time.Now().UTC())
 }
 
 func (s *AuthService) DeleteSession(ctx context.Context, sessionID string) error {
