@@ -80,7 +80,7 @@ WHERE user_id = ?
   AND (sqlc.narg('podcast_url_filter') IS NULL OR podcast_url = sqlc.narg('podcast_url_filter'))
   AND (sqlc.narg('device_id_filter') IS NULL OR device_id = sqlc.narg('device_id_filter'))
 ORDER BY created_at ASC
-LIMIT sqlc.narg('limit_val');
+LIMIT COALESCE(sqlc.narg('limit_val'), -1);
 
 -- name: GetDeviceSyncGroupMemberships :many
 SELECT d.uid, sgm.sync_group_id

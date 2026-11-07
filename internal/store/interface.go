@@ -46,4 +46,5 @@ type Store interface {
 	UpsertPodcastEpisodes(ctx context.Context, podcastID int64, episodes []domain.PodcastEpisodeMetadata) error
 	UpsertPodcastWithEpisodes(ctx context.Context, podcast *domain.Podcast, episodes []domain.PodcastEpisodeMetadata) error
 	PodcastFetchDue(ctx context.Context, podcastURL string, now time.Time, cooldown time.Duration) (bool, *domain.Podcast, error)
+	Close() error
 }

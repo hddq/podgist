@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hddq/podgist/internal/domain"
 	"github.com/hddq/podgist/internal/migrations"
 	"github.com/hddq/podgist/internal/store"
 	"github.com/testcontainers/testcontainers-go"
@@ -78,6 +79,66 @@ func runStoreTests(t *testing.T, st store.Store) {
 	if summary.SubscriptionCount != 1 || summary.DeviceCount != 1 {
 		t.Fatalf("unexpected summary: %+v", summary)
 	}
+
+	// 6. Sync Group & Aggregated Subscriptions ordering
+	dev2, err := st.GetOrCreateDevice(ctx, user.ID, "dev_uid_2")
+	if err != nil {
+		t.Fatalf("GetOrCreateDevice dev2 failed: %v", err)
+	}
+	if err := st.SetSyncGroup(ctx, user.ID, []string{dev2.UID, dev.UID}); err != nil {
+		t.Fatalf("SetSyncGroup failed: %v", err)
+	}
+	aggSubs, err := st.GetAggregatedSubscriptions(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetAggregatedSubscriptions failed: %v", err)
+	}
+	if len(aggSubs) != 1 || len(aggSubs[0].Devices) != 2 || aggSubs[0].Devices[0] != "dev_uid_1" || aggSubs[0].Devices[1] != "dev_uid_2" {
+		t.Fatalf("unexpected aggregated subscriptions: %+v", aggSubs)
+	}
+
+	// 7. Episode Actions (including unlimited limit=0)
+	now := time.Now().UTC()
+	if err := st.AddEpisodeAction(ctx, &domain.EpisodeAction{
+		UserID:     user.ID,
+		DeviceID:   &dev.ID,
+		PodcastURL: "https://example.com/feed.xml",
+		EpisodeURL: "https://example.com/ep1.mp3",
+		Action:     domain.ActionPlay,
+		Timestamp:  now,
+		CreatedAt:  now,
+	}); err != nil {
+		t.Fatalf("AddEpisodeAction failed: %v", err)
+	}
+	actions, err := st.GetEpisodeActionsSince(ctx, user.ID, nil, nil, nil, 0)
+	if err != nil {
+		t.Fatalf("GetEpisodeActionsSince (limit=0) failed: %v", err)
+	}
+	if len(actions) != 1 {
+		t.Fatalf("expected 1 episode action, got %d", len(actions))
+	}
+
+	// 8. Podcast Metadata with nil LastFetchedAt & nil PublishedAt
+	podcast := &domain.Podcast{
+		URL:           "https://example.com/feed.xml",
+		Title:         "Example Podcast",
+		LastFetchedAt: nil,
+	}
+	if err := st.UpsertPodcastWithEpisodes(ctx, podcast, []domain.PodcastEpisodeMetadata{
+		{
+			EpisodeURL:  "https://example.com/ep1.mp3",
+			Title:       "Episode 1",
+			PublishedAt: nil,
+		},
+	}); err != nil {
+		t.Fatalf("UpsertPodcastWithEpisodes failed: %v", err)
+	}
+	fetchedPodcast, err := st.GetPodcastByURL(ctx, "https://example.com/feed.xml")
+	if err != nil {
+		t.Fatalf("GetPodcastByURL failed: %v", err)
+	}
+	if fetchedPodcast.LastFetchedAt != nil {
+		t.Fatalf("expected nil LastFetchedAt, got %v", fetchedPodcast.LastFetchedAt)
+	}
 }
 
 func TestStoreSQLite(t *testing.T) {
@@ -97,6 +158,7 @@ func TestStoreSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to initialize sqlite store: %v", err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 
 	runStoreTests(t, st)
 }
@@ -137,6 +199,7 @@ func TestStorePostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to initialize postgres store: %v", err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 
 	runStoreTests(t, st)
 }

@@ -61,6 +61,7 @@ func runServe(args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize store: %w", err)
 	}
+	defer st.Close()
 
 	authSvc := service.NewAuthService(st, cfg.Auth.BcryptCost)
 	metadataSvc := service.NewPodcastMetadataService(st, logger)
@@ -83,15 +84,22 @@ func runServe(args []string) error {
 
 	// Periodically clean up expired sessions in the background so we
 	// don't need to do it on every request (important for SQLite).
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	defer bgCancel()
 	go func() {
-		if err := authSvc.CleanupExpiredSessions(context.Background()); err != nil {
+		if err := authSvc.CleanupExpiredSessions(bgCtx); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Error("initial session cleanup failed", "error", err)
 		}
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
-		for range ticker.C {
-			if err := authSvc.CleanupExpiredSessions(context.Background()); err != nil {
-				logger.Error("session cleanup failed", "error", err)
+		for {
+			select {
+			case <-bgCtx.Done():
+				return
+			case <-ticker.C:
+				if err := authSvc.CleanupExpiredSessions(bgCtx); err != nil && !errors.Is(err, context.Canceled) {
+					logger.Error("session cleanup failed", "error", err)
+				}
 			}
 		}
 	}()

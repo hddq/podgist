@@ -464,7 +464,7 @@ WHERE user_id = ?
   AND (?3 IS NULL OR podcast_url = ?3)
   AND (?4 IS NULL OR device_id = ?4)
 ORDER BY created_at ASC
-LIMIT ?5
+LIMIT COALESCE(?5, -1)
 `
 
 type GetEpisodeActionsSinceParams struct {
@@ -1178,10 +1178,10 @@ WHERE url = ?
 `
 
 type UpdatePodcastFetchStateParams struct {
-	Etag          string    `json:"etag"`
-	LastModified  string    `json:"last_modified"`
-	LastFetchedAt time.Time `json:"last_fetched_at"`
-	Url           string    `json:"url"`
+	Etag          string     `json:"etag"`
+	LastModified  string     `json:"last_modified"`
+	LastFetchedAt *time.Time `json:"last_fetched_at"`
+	Url           string     `json:"url"`
 }
 
 func (q *Queries) UpdatePodcastFetchState(ctx context.Context, arg UpdatePodcastFetchStateParams) error {
@@ -1237,15 +1237,15 @@ ON CONFLICT (podcast_id, episode_url) DO UPDATE SET
 `
 
 type UpsertPodcastEpisodeParams struct {
-	PodcastID       int64     `json:"podcast_id"`
-	EpisodeUrl      string    `json:"episode_url"`
-	Guid            string    `json:"guid"`
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	PublishedAt     time.Time `json:"published_at"`
-	DurationSeconds *int64    `json:"duration_seconds"`
-	MimeType        string    `json:"mime_type"`
-	ByteSize        *int64    `json:"byte_size"`
+	PodcastID       int64      `json:"podcast_id"`
+	EpisodeUrl      string     `json:"episode_url"`
+	Guid            string     `json:"guid"`
+	Title           string     `json:"title"`
+	Description     string     `json:"description"`
+	PublishedAt     *time.Time `json:"published_at"`
+	DurationSeconds *int64     `json:"duration_seconds"`
+	MimeType        string     `json:"mime_type"`
+	ByteSize        *int64     `json:"byte_size"`
 }
 
 func (q *Queries) UpsertPodcastEpisode(ctx context.Context, arg UpsertPodcastEpisodeParams) error {
@@ -1282,15 +1282,15 @@ RETURNING id
 `
 
 type UpsertPodcastMetadataParams struct {
-	Url           string    `json:"url"`
-	Title         string    `json:"title"`
-	Description   string    `json:"description"`
-	Author        string    `json:"author"`
-	SiteUrl       string    `json:"site_url"`
-	ImageUrl      string    `json:"image_url"`
-	Etag          string    `json:"etag"`
-	LastModified  string    `json:"last_modified"`
-	LastFetchedAt time.Time `json:"last_fetched_at"`
+	Url           string     `json:"url"`
+	Title         string     `json:"title"`
+	Description   string     `json:"description"`
+	Author        string     `json:"author"`
+	SiteUrl       string     `json:"site_url"`
+	ImageUrl      string     `json:"image_url"`
+	Etag          string     `json:"etag"`
+	LastModified  string     `json:"last_modified"`
+	LastFetchedAt *time.Time `json:"last_fetched_at"`
 }
 
 func (q *Queries) UpsertPodcastMetadata(ctx context.Context, arg UpsertPodcastMetadataParams) (int64, error) {

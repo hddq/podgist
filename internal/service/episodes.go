@@ -95,7 +95,7 @@ func (s *EpisodeService) UploadActions(ctx context.Context, userID int64, action
 					return nil, fmt.Errorf("invalid timestamp %q", a.Timestamp)
 				}
 			}
-			ea.Timestamp = ts
+			ea.Timestamp = ts.UTC()
 		}
 
 		if a.Device != "" {

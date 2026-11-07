@@ -34,4 +34,4 @@ jobs:
       - name: Run integration tests
         env:
           GOTMPDIR: /tmp/podgist-gotmp
-        run: go test ./internal/http ./internal/migrations -count=1
+        run: go test ./internal/http ./internal/migrations ./internal/store -count=1

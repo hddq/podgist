@@ -14,17 +14,28 @@ import (
 )
 
 func New(driver, dsn string) (Store, error) {
-	if driver == "sqlite" || driver == "sqlite3" {
+	var sqlDriver string
+	switch driver {
+	case "postgres", "pgx":
+		sqlDriver = "pgx"
+	case "sqlite", "sqlite3":
+		sqlDriver = "sqlite"
 		dsn = sqliteDSN(dsn)
+	default:
+		return nil, fmt.Errorf("unsupported driver: %s", driver)
 	}
 
-	db, err := sql.Open(driver, dsn)
+	db, err := sql.Open(sqlDriver, dsn)
 	if err != nil {
 		return nil, err
 	}
 
 	switch driver {
 	case "postgres", "pgx":
+		if err := db.Ping(); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
 		return postgres.NewStore(db), nil
 	case "sqlite", "sqlite3":
 		// SQLite only supports a single writer at a time. Limiting to 1 open
@@ -34,8 +45,13 @@ func New(driver, dsn string) (Store, error) {
 		// connection the pool serialises all access which is the safest
 		// option for a low-traffic self-hosted server.
 		db.SetMaxOpenConns(1)
+		if err := db.Ping(); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
 		return sqlite.NewStore(db), nil
 	default:
+		_ = db.Close()
 		return nil, fmt.Errorf("unsupported driver: %s", driver)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/hddq/podgist/internal/domain"
@@ -25,6 +26,10 @@ func NewStore(db *sql.DB) *Store {
 
 func (s *Store) DB() *sql.DB {
 	return s.db
+}
+
+func (s *Store) Close() error {
+	return s.db.Close()
 }
 
 // --- Users ---
@@ -729,9 +734,17 @@ func (s *Store) GetAggregatedSubscriptions(ctx context.Context, userID int64) ([
 	var res []domain.AggregatedSubscription
 	for _, r := range rows {
 		var devices []string
-		if devicesStr, ok := r.Devices.(string); ok {
-			_ = json.Unmarshal([]byte(devicesStr), &devices)
+		switch v := r.Devices.(type) {
+		case string:
+			if err := json.Unmarshal([]byte(v), &devices); err != nil {
+				return nil, err
+			}
+		case []byte:
+			if err := json.Unmarshal(v, &devices); err != nil {
+				return nil, err
+			}
 		}
+		slices.Sort(devices)
 		res = append(res, domain.AggregatedSubscription{
 			PodcastURL:   r.PodcastUrl,
 			PodcastTitle: r.PodcastTitle,
@@ -781,10 +794,6 @@ func (s *Store) GetPodcastByURL(ctx context.Context, url string) (*domain.Podcas
 	if err != nil {
 		return nil, err
 	}
-	var lastFetchedAt *time.Time
-	if !p.LastFetchedAt.IsZero() {
-		lastFetchedAt = &p.LastFetchedAt
-	}
 	return &domain.Podcast{
 		ID:            p.ID,
 		URL:           p.Url,
@@ -795,7 +804,7 @@ func (s *Store) GetPodcastByURL(ctx context.Context, url string) (*domain.Podcas
 		ImageURL:      p.ImageUrl,
 		ETag:          p.Etag,
 		LastModified:  p.LastModified,
-		LastFetchedAt: lastFetchedAt,
+		LastFetchedAt: p.LastFetchedAt,
 		CreatedAt:     p.CreatedAt,
 		UpdatedAt:     p.UpdatedAt,
 	}, nil
@@ -809,10 +818,6 @@ func (s *Store) PodcastEpisodeExists(ctx context.Context, podcastURL, episodeURL
 }
 
 func (s *Store) UpsertPodcastMetadata(ctx context.Context, podcast *domain.Podcast) (int64, error) {
-	var lastFetchedAt time.Time
-	if podcast.LastFetchedAt != nil {
-		lastFetchedAt = *podcast.LastFetchedAt
-	}
 	return s.q.UpsertPodcastMetadata(ctx, UpsertPodcastMetadataParams{
 		Url:           podcast.URL,
 		Title:         podcast.Title,
@@ -822,7 +827,7 @@ func (s *Store) UpsertPodcastMetadata(ctx context.Context, podcast *domain.Podca
 		ImageUrl:      podcast.ImageURL,
 		Etag:          podcast.ETag,
 		LastModified:  podcast.LastModified,
-		LastFetchedAt: lastFetchedAt,
+		LastFetchedAt: podcast.LastFetchedAt,
 	})
 }
 
@@ -831,7 +836,7 @@ func (s *Store) UpdatePodcastFetchState(ctx context.Context, podcastURL, etag, l
 		Url:           podcastURL,
 		Etag:          etag,
 		LastModified:  lastModified,
-		LastFetchedAt: fetchedAt,
+		LastFetchedAt: &fetchedAt,
 	})
 }
 
@@ -848,10 +853,6 @@ func (s *Store) UpsertPodcastEpisodes(ctx context.Context, podcastID int64, epis
 	qtx := s.q.WithTx(tx)
 
 	for _, ep := range episodes {
-		var pubAt time.Time
-		if ep.PublishedAt != nil {
-			pubAt = *ep.PublishedAt
-		}
 		var dur *int64
 		if ep.DurationSeconds != nil {
 			d := int64(*ep.DurationSeconds)
@@ -863,7 +864,7 @@ func (s *Store) UpsertPodcastEpisodes(ctx context.Context, podcastID int64, epis
 			Guid:            ep.GUID,
 			Title:           ep.Title,
 			Description:     ep.Description,
-			PublishedAt:     pubAt,
+			PublishedAt:     ep.PublishedAt,
 			DurationSeconds: dur,
 			MimeType:        ep.MIMEType,
 			ByteSize:        ep.ByteSize,
@@ -884,11 +885,6 @@ func (s *Store) UpsertPodcastWithEpisodes(ctx context.Context, podcast *domain.P
 
 	qtx := s.q.WithTx(tx)
 
-	var lastFetchedAt time.Time
-	if podcast.LastFetchedAt != nil {
-		lastFetchedAt = *podcast.LastFetchedAt
-	}
-
 	podcastID, err := qtx.UpsertPodcastMetadata(ctx, UpsertPodcastMetadataParams{
 		Url:           podcast.URL,
 		Title:         podcast.Title,
@@ -898,17 +894,13 @@ func (s *Store) UpsertPodcastWithEpisodes(ctx context.Context, podcast *domain.P
 		ImageUrl:      podcast.ImageURL,
 		Etag:          podcast.ETag,
 		LastModified:  podcast.LastModified,
-		LastFetchedAt: lastFetchedAt,
+		LastFetchedAt: podcast.LastFetchedAt,
 	})
 	if err != nil {
 		return err
 	}
 
 	for _, ep := range episodes {
-		var pubAt time.Time
-		if ep.PublishedAt != nil {
-			pubAt = *ep.PublishedAt
-		}
 		var dur *int64
 		if ep.DurationSeconds != nil {
 			d := int64(*ep.DurationSeconds)
@@ -920,7 +912,7 @@ func (s *Store) UpsertPodcastWithEpisodes(ctx context.Context, podcast *domain.P
 			Guid:            ep.GUID,
 			Title:           ep.Title,
 			Description:     ep.Description,
-			PublishedAt:     pubAt,
+			PublishedAt:     ep.PublishedAt,
 			DurationSeconds: dur,
 			MimeType:        ep.MIMEType,
 			ByteSize:        ep.ByteSize,

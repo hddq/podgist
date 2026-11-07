@@ -19,9 +19,13 @@ Docker images are automatically built via GitHub Actions and published to the Gi
 
 The easiest way to get Podgist up and running is by using Docker Compose.
 
-1. **Download config and compose:**
+1. **Download config and compose (PostgreSQL or SQLite):**
 ```bash
-curl -O https://raw.githubusercontent.com/hddq/podgist/master/compose.yaml
+# For PostgreSQL:
+curl -o compose.yaml https://raw.githubusercontent.com/hddq/podgist/master/docker/compose-postgres.yaml
+# Or for SQLite:
+curl -o compose.yaml https://raw.githubusercontent.com/hddq/podgist/master/docker/compose-sqlite.yaml
+
 curl -O https://raw.githubusercontent.com/hddq/podgist/master/config.example.yaml
 cp config.example.yaml config.yaml
 ```

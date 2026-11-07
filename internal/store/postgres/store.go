@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/hddq/podgist/internal/domain"
@@ -20,6 +21,10 @@ func NewStore(db *sql.DB) *Store {
 		db: db,
 		q:  New(db),
 	}
+}
+
+func (s *Store) Close() error {
+	return s.db.Close()
 }
 
 // --- Users ---
@@ -144,7 +149,15 @@ func (s *Store) GetDevice(ctx context.Context, userID int64, uid string) (*domai
 }
 
 func (s *Store) GetOrCreateDevice(ctx context.Context, userID int64, uid string) (*domain.Device, error) {
-	d, err := s.q.UpsertDevice(ctx, UpsertDeviceParams{
+	d, err := s.GetDevice(ctx, userID, uid)
+	if err == nil {
+		return d, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	created, err := s.q.UpsertDevice(ctx, UpsertDeviceParams{
 		UserID: userID,
 		Uid:    uid,
 	})
@@ -152,13 +165,13 @@ func (s *Store) GetOrCreateDevice(ctx context.Context, userID int64, uid string)
 		return nil, err
 	}
 	return &domain.Device{
-		ID:        d.ID,
-		UserID:    d.UserID,
-		UID:       d.Uid,
-		Caption:   d.Caption,
-		Type:      domain.DeviceType(d.Type),
-		CreatedAt: d.CreatedAt,
-		UpdatedAt: d.UpdatedAt,
+		ID:        created.ID,
+		UserID:    created.UserID,
+		UID:       created.Uid,
+		Caption:   created.Caption,
+		Type:      domain.DeviceType(created.Type),
+		CreatedAt: created.CreatedAt,
+		UpdatedAt: created.UpdatedAt,
 	}, nil
 }
 
@@ -478,7 +491,7 @@ func (s *Store) SetSyncGroup(ctx context.Context, userID int64, deviceUIDs []str
 			Uid:    uid,
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("device %q not found: %w", uid, err)
 		}
 		deviceIDs = append(deviceIDs, id)
 	}
@@ -536,7 +549,7 @@ func (s *Store) SetSyncGroup(ctx context.Context, userID int64, deviceUIDs []str
 				PodcastUrl: podcastURL,
 			})
 			if err != nil {
-				// DO NOTHING handles duplicate constraint
+				return err
 			}
 			err = qtx.InsertSubscriptionEvent(ctx, InsertSubscriptionEventParams{
 				UserID:     userID,
@@ -567,7 +580,7 @@ func (s *Store) StopSync(ctx context.Context, userID int64, uid string) error {
 		Uid:    uid,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("device %q not found: %w", uid, err)
 	}
 
 	if err := qtx.DeleteDeviceFromSyncGroups(ctx, deviceID); err != nil {
@@ -821,6 +834,9 @@ func (s *Store) UpdatePodcastFetchState(ctx context.Context, podcastURL, etag, l
 }
 
 func (s *Store) UpsertPodcastEpisodes(ctx context.Context, podcastID int64, episodes []domain.PodcastEpisodeMetadata) error {
+	if len(episodes) == 0 {
+		return nil
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

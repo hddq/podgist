@@ -43,13 +43,17 @@ sql:
           - column: "episode_actions.created_at"
             go_type: "time.Time"
           - column: "podcasts.last_fetched_at"
-            go_type: "time.Time"
+            go_type:
+              type: "time.Time"
+              pointer: true
           - column: "podcasts.created_at"
             go_type: "time.Time"
           - column: "podcasts.updated_at"
             go_type: "time.Time"
           - column: "podcast_episodes.published_at"
-            go_type: "time.Time"
+            go_type:
+              type: "time.Time"
+              pointer: true
           - column: "podcast_episodes.created_at"
             go_type: "time.Time"
           - column: "podcast_episodes.updated_at"

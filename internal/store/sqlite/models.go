@@ -33,33 +33,33 @@ type EpisodeAction struct {
 }
 
 type Podcast struct {
-	ID            int64     `json:"id"`
-	Url           string    `json:"url"`
-	Title         string    `json:"title"`
-	Description   string    `json:"description"`
-	Author        string    `json:"author"`
-	SiteUrl       string    `json:"site_url"`
-	ImageUrl      string    `json:"image_url"`
-	Etag          string    `json:"etag"`
-	LastModified  string    `json:"last_modified"`
-	LastFetchedAt time.Time `json:"last_fetched_at"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            int64      `json:"id"`
+	Url           string     `json:"url"`
+	Title         string     `json:"title"`
+	Description   string     `json:"description"`
+	Author        string     `json:"author"`
+	SiteUrl       string     `json:"site_url"`
+	ImageUrl      string     `json:"image_url"`
+	Etag          string     `json:"etag"`
+	LastModified  string     `json:"last_modified"`
+	LastFetchedAt *time.Time `json:"last_fetched_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type PodcastEpisode struct {
-	ID              int64     `json:"id"`
-	PodcastID       int64     `json:"podcast_id"`
-	EpisodeUrl      string    `json:"episode_url"`
-	Guid            string    `json:"guid"`
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	PublishedAt     time.Time `json:"published_at"`
-	DurationSeconds *int64    `json:"duration_seconds"`
-	MimeType        string    `json:"mime_type"`
-	ByteSize        *int64    `json:"byte_size"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              int64      `json:"id"`
+	PodcastID       int64      `json:"podcast_id"`
+	EpisodeUrl      string     `json:"episode_url"`
+	Guid            string     `json:"guid"`
+	Title           string     `json:"title"`
+	Description     string     `json:"description"`
+	PublishedAt     *time.Time `json:"published_at"`
+	DurationSeconds *int64     `json:"duration_seconds"`
+	MimeType        string     `json:"mime_type"`
+	ByteSize        *int64     `json:"byte_size"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type Session struct {
